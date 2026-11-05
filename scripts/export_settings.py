@@ -125,7 +125,11 @@ def export_settings(source):
                 value = row["value"]
             if row["type"] == "general":
                 settings[row["key"]] = value
-            elif row["key"] not in ("jwtSecret", "dbVersion"):
+            # The destination generates its own auth secret and migration state.
+            elif row["key"] not in (
+                "jwtSecret", "dbVersion", "database_version",
+                "databasePatchedFiles", "migrateAggregateTableState",
+            ):
                 manual_settings.append({"key": row["key"], "type": row["type"], "value": value})
         if settings.get("disableAuth"):
             raise ValueError("Source has authentication disabled; review this setting before restoration")
