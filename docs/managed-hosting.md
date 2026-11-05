@@ -1,6 +1,6 @@
 # Managed hosting readiness
 
-## Status: pilot preparation, no cloud resources created
+## Pilot deployment runbook
 
 The approved direction is App Service B1 plus Azure Database for MySQL Flexible
 Server B1ms, using MySQL 8.4 LTS. The approved migration scope is configuration
@@ -17,7 +17,8 @@ the fix.
 
 `infra/main.bicep` compiles offline. The manual update workflow is disabled;
 there is no provisioning workflow, schedule, auto-merge, or registry webhook.
-No live Azure validation, what-if, creation, DNS change or real import has run.
+This file documents generic code and procedures, not live resource state.
+Subscription details, credentials, deployment outputs and approvals stay private.
 
 ## Evidence and limits
 
@@ -83,14 +84,14 @@ Dockerfile patch steps and script, and pass the same negative tests.
 
 ## Resources and spending decision
 
-Parent-collected West US CAD retail estimates, at 730 hours/month, before taxes:
+Central US CAD retail estimates, at 730 hours/month, before taxes:
 
 | Component | Assumption | Estimated CAD/month |
 | --- | --- | ---: |
 | Linux App Service plan | B1, one worker, CAD0.025267/hour | 18.44491 |
-| MySQL Flexible Server compute | Burstable B1ms, CAD0.030882/hour | 22.54386 |
-| MySQL data storage | 20 GiB minimum, CAD0.193717/GiB-month | 3.87434 |
-| Core subtotal | No HA or replicas | **44.86311** |
+| MySQL Flexible Server compute | Burstable B1ms, CAD0.026966/hour | 19.68518 |
+| MySQL data storage | 20 GiB minimum, CAD0.182487/GiB-month | 3.64974 |
+| Core subtotal | No HA or replicas | **41.77983** |
 
 CAD50/month is a planning allowance, not a quotation or hard cap. Credits and
 account-specific pricing must be checked privately by the owner. The resource
@@ -150,6 +151,8 @@ creation. The intended bounded setup is:
    model with one main container, `targetPort: '3001'`, anonymous public image
    pull, and inherited app settings. It does not mix in legacy `WEBSITES_PORT`
    routing. Startup uses `umask 077` for new runtime secret files.
+   The plan explicitly depends on successful MySQL database provisioning, so a
+   failed database create cannot allocate an otherwise unused paid web worker.
 2. One MySQL 8.4 B1ms server, 20 GiB starting storage, local backups, seven-day
    retention, no HA/replicas. Require TLS and restrict public database ingress
    to the app's required outbound addresses plus explicitly approved temporary
@@ -208,7 +211,7 @@ az deployment group create --resource-group <approved-group> --template-file .\i
 Required parameters: `name`, `image` (the anonymously pullable GHCR digest),
 `operatorIPv4` (one real public IPv4, never `0.0.0.0`),
 `databaseAdministrator`, `databaseAdministratorPassword`, `databasePassword`.
-`location` defaults to `westus`. Obtain actual subscription/resource names only
+`location` defaults to `centralus`. Obtain actual subscription/resource names only
 in the private operator context. Confirm B1/B1ms availability, 20 GiB minimum,
 included I/O allowance, default CA trust, billing/credit applicability and budget
 notifications before creation. A budget alert is not a hard cap.

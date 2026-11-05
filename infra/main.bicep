@@ -1,6 +1,6 @@
 targetScope = 'resourceGroup'
 
-param location string = 'westus'
+param location string = 'centralus'
 @minLength(3)
 @maxLength(40)
 param name string
@@ -23,6 +23,10 @@ resource plan 'Microsoft.Web/serverfarms@2024-11-01' = {
     tier: 'Basic'
     capacity: 1
   }
+  // Avoid allocating a paid web worker when database provisioning fails.
+  dependsOn: [
+    database
+  ]
   properties: {
     reserved: true
   }

@@ -4,7 +4,7 @@ Candidate: Linux App Service B1 and Azure Database for MySQL Flexible Server B1m
 using stock released Uptime Kuma. No VM, Litestream, paid container registry,
 or custom persistence controller.
 
-**Prepared for an explicitly approved pilot, not deployed.** The compatibility
+**Deployment tooling; live operation requires explicit approval.** The compatibility
 workflow runs disposable synthetic containers, compiles Bicep, and checks update
 guards without Azure credentials. A separate manual OIDC update workflow is
 disabled until deliberately enabled, restricted to `main`, and requires backup
@@ -61,12 +61,13 @@ even when the initial credentials come from a secret reference.
 
 ## Current spending boundary
 
-The West US retail estimate is approximately CAD44.86/month
+The Central US retail estimate is approximately CAD41.78/month
 for B1 hosting, B1ms MySQL, and the 20 GiB minimum database storage at 730 hours.
 CAD50/month is a planning allowance, **not a spending cap**. Taxes, backup
 overage, I/O, network egress, asset backups, optional secret-store operations,
-and temporary parallel resources can add costs. No paid resources have been
-created. Provisioning, DNS, import, and cutover remain separate approval gates.
+and temporary parallel resources can add costs. The web plan waits for successful
+database provisioning so a database failure does not leave an unused paid web
+worker. Provisioning, DNS, import, and cutover remain separate approval gates.
 
 Start with [the resource, cost, provisioning, update and recovery runbook](docs/managed-hosting.md).
 Infrastructure is in `infra/`; private migration and update tools are in
