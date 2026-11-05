@@ -72,7 +72,7 @@ docker run --rm --name "$probe" --network "$network" \
 
 start_kuma() {
     local host="$1"
-    docker run --detach --name "$app" --network "$network" \
+    docker run --detach --name "$app" --network "$network" --network-alias kuma \
         --mount "type=bind,source=$work,target=/certs,readonly" \
         -e UPTIME_KUMA_DB_TYPE=mariadb -e "UPTIME_KUMA_DB_HOSTNAME=$host" \
         -e UPTIME_KUMA_DB_PORT=3306 -e UPTIME_KUMA_DB_NAME=kuma \
@@ -103,6 +103,11 @@ fi
 echo "PASS: stock Kuma created its schema and started on MySQL 8.4.9 with TLS"
 docker exec -e MYSQL_PWD='SyntheticRootOnly42!' "$db" mysql --protocol=socket -uroot -Nse \
     "SELECT COUNT(*) AS table_count FROM information_schema.tables WHERE table_schema='kuma';"
+
+docker run --rm --name "$probe" --network "$network" \
+    --mount "type=bind,source=$work,target=/certs,readonly" \
+    --mount "type=bind,source=$PWD/tests/configuration.cjs,target=/test.cjs,readonly" \
+    kuma-compat node /test.cjs || tls_result=1
 
 # Stop before starting a replacement. No overlapping Kuma processes.
 docker stop --time 30 "$app" >/dev/null

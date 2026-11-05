@@ -25,6 +25,7 @@ jobs:
         run: |
           bash -n tests/compatibility.sh
           node --check tests/mysql-tls.cjs
+          node --check tests/configuration.cjs
           shellcheck tests/compatibility.sh
       - name: Test stock release with synthetic MySQL and TLS certificates
         run: bash tests/compatibility.sh

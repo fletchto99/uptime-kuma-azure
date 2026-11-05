@@ -50,7 +50,7 @@ async function main() {
         "untrusted CA is rejected",
         "mysql",
         { rejectUnauthorized: true, ca: [untrustedCA] },
-        /SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT/,
+        /SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT|self-signed certificate in certificate chain/,
     );
     const controlRejected = await rejects(
         "control with verifyIdentity=true rejects mismatched hostname",
