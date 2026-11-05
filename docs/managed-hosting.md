@@ -15,6 +15,24 @@ test are safe to review independently.
 
 ## Evidence and limits
 
+[Hosted run on 2026-11-05](https://github.com/fletchto99/uptime-kuma-azure/actions/runs/41982440614)
+produced the following results with no Azure resources or private data:
+
+| Check | Result |
+| --- | --- |
+| Stock Kuma 2.5.9 initializes MySQL 8.4.9 | Pass, 28 tables and application listening |
+| Valid CA and matching hostname | Pass, TLS cipher in use |
+| Untrusted CA | Rejected as required |
+| Explicit driver `verifyIdentity: true`, wrong hostname | Rejected as required |
+| Actual unmodified Kuma, trusted CA but wrong hostname | **Accepted: deployment blocker** |
+| Fresh admin and six paused HTTP monitors via UI API | Pass |
+| Notification credential and six remapped associations | Pass |
+| Status-page monitor groups/order and app settings | Pass |
+
+The workflow remains intentionally red for the real application hostname
+failure. A future corrected release must pass the actual-app check; merely
+changing the standalone driver control is not a fix.
+
 The upstream image index is pinned in `Dockerfile`; it includes Linux amd64,
 arm64, and arm/v7 images. CI verifies the readable tag still resolves to that
 index and runs amd64. Other architectures have not been runtime-tested.

@@ -80,6 +80,7 @@ async function main() {
 
     await call("addStatusPage", "Synthetic status", "synthetic");
     const { config } = await call("getStatusPage", "synthetic");
+    const publicMonitorIDs = [...monitorMap.values()].reverse();
     await call("saveStatusPage", "synthetic", {
         ...config,
         description: "Synthetic configuration-only migration",
@@ -87,7 +88,7 @@ async function main() {
         analyticsType: null,
     }, "", [{
         name: "Synthetic services",
-        monitorList: [...monitorMap.values()].map((id) => ({ id, sendUrl: false })),
+        monitorList: publicMonitorIDs.map((id) => ({ id, sendUrl: false })),
     }]);
     const { data: settings } = await call("getSettings");
     await call("setSettings", {
@@ -103,8 +104,8 @@ async function main() {
     const page = await pageResponse.json();
     assert.equal(page.publicGroupList[0].monitorList.length, 6);
     assert.deepEqual(
-        page.publicGroupList[0].monitorList.map((monitor) => monitor.id).sort((a, b) => a - b),
-        [...monitorMap.values()].sort((a, b) => a - b),
+        page.publicGroupList[0].monitorList.map((monitor) => monitor.id),
+        publicMonitorIDs,
     );
 
     const db = await mysql.createConnection({

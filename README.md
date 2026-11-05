@@ -23,8 +23,8 @@ No custom application build or private files are included in the image.
 
 - Actual schema initialization and application startup using the stock release.
 - TLS encryption and rejection of an untrusted CA.
-- Rejection of a trusted certificate with the wrong hostname, including both
-  the bundled driver and actual application startup.
+- Rejection of a trusted certificate with the wrong hostname during actual
+  application startup.
 - An explicit `verifyIdentity: true` driver control to distinguish a broken
   test fixture from missing application hostname verification.
 

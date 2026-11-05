@@ -58,13 +58,9 @@ async function main() {
         { ...stockSSL, verifyIdentity: true },
         /ERR_TLS_CERT_ALTNAME_INVALID|Hostname\/IP does not match/,
     );
-    const stockRejected = await rejects(
-        "stock SSL options reject mismatched hostname",
-        "wrong-name",
-        stockSSL,
-        /ERR_TLS_CERT_ALTNAME_INVALID|Hostname\/IP does not match/,
-    );
-    if (!untrustedRejected || !controlRejected || !stockRejected) {
+    // compatibility.sh checks the real app's hostname behavior, so a future
+    // fixed release is not blocked by replaying the old release's SSL options.
+    if (!untrustedRejected || !controlRejected) {
         process.exitCode = 1;
     }
 }
