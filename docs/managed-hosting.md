@@ -21,25 +21,37 @@ No live Azure validation, what-if, creation, DNS change or real import has run.
 
 ## Evidence and limits
 
-[Hosted run on 2026-11-05](https://github.com/fletchto99/uptime-kuma-azure/actions/runs/41982440614)
-produced the following results with no Azure resources or private data:
+[Final hosted run on 2026-11-05](https://github.com/fletchto99/uptime-kuma-azure/actions/runs/41985786213)
+passed at code revision `d6c429e028a2a973e19327749b8a45730213136b`, with no
+Azure resources or private data:
 
 | Check | Result |
 | --- | --- |
-| Stock Kuma 2.5.9 initializes MySQL 8.4.9 | Pass, 28 tables and application listening |
+| Patched official Kuma 2.5.9 initializes MySQL 8.4.9 | Pass, 28 tables and application listening |
 | Valid CA and matching hostname | Pass, TLS cipher in use |
 | Untrusted CA | Rejected as required |
 | Explicit driver `verifyIdentity: true`, wrong hostname | Rejected as required |
-| Actual unmodified Kuma, trusted CA but wrong hostname | **Accepted: deployment blocker** |
-| Fresh admin and six paused HTTP monitors via UI API | Pass |
-| Notification credential and six remapped associations | Pass |
+| Actual patched Kuma, wrong hostname or untrusted CA | Both rejected |
+| Stopped SQLite export and actual private import CLI | Pass, six HTTP monitors paused |
+| Every exported HTTP field, notification credentials and remapped associations | Pass |
 | Status-page monitor groups/order and app settings | Pass |
+| Actual HTTP polling and an UP heartbeat stored in MySQL | Pass |
+| Source-change patch guard and unsafe configuration rejection | Pass |
+| Update ordering, failure-stop behavior and singleton/approval guards | Pass |
+| Bicep compilation and anonymous public image pull | Pass |
 
-That table describes the original stock-release diagnosis.
-[The approved patched-image run](https://github.com/fletchto99/uptime-kuma-azure/actions/runs/41982935591)
-passes actual Kuma startup, actual-app untrusted-CA rejection, actual-app
-wrong-host rejection, and synthetic configuration recreation. The current gate
-also exercises a stopped SQLite export into a fresh MySQL-backed application.
+Approved-pilot image candidate, published for Linux amd64 and independently
+verified anonymously pullable:
+
+```text
+ghcr.io/fletchto99/uptime-kuma-azure@sha256:a5b870e1f90016d9bd3ac78600e474b5320a4e8b2349a3fdb29827d59ed0b210
+```
+
+Readable tag: `2.5.9-tls-d6c429e028a2`. Deployment must use the digest above, not
+the mutable tag. Subsequent tested images are recorded in CI's job summary.
+The [original stock-release diagnosis](https://github.com/fletchto99/uptime-kuma-azure/actions/runs/41982440614)
+remains available: unmodified 2.5.9 accepted a trusted certificate for the wrong
+hostname, which is why the narrow patch exists.
 
 The upstream image index is pinned in `Dockerfile`; it includes Linux amd64,
 arm64, and arm/v7 images. CI verifies the readable tag still resolves to that
@@ -183,9 +195,12 @@ After parent approval, use a **private operator terminal**, not public Actions,
 to provide secure parameters and run the preview. Keep the parameters file
 outside the repository and restrict its filesystem ACL. It contains both the
 administrator and the database-scoped runtime password.
+Use a separate preview file with nonsecret dummy passwords for what-if; use
+real passwords only for the approved creation with output disabled. Do not
+enable debug logging, terminal transcripts, or public output capture.
 
 ```powershell
-az deployment group what-if --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json'
+az deployment group what-if --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\preview.parameters.json'
 # Only after reviewing the preview and receiving live-creation approval:
 az deployment group create --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json' --output none
 ```
