@@ -1,0 +1,35 @@
+name: Stock Kuma compatibility
+
+on:
+  push:
+    branches: [main, fletchto99/kuma-managed-hosting]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mysql-tls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate scripts
+        run: |
+          bash -n tests/compatibility.sh
+          node --check tests/mysql-tls.cjs
+          shellcheck tests/compatibility.sh
+      - name: Test stock release with synthetic MySQL and TLS certificates
+        run: bash tests/compatibility.sh
+      - name: Report failed compatibility gate
+        if: failure()
+        run: |
+          echo "::error::Compatibility gate failed. Do not provision or deploy this candidate."
+          echo "Deployment remains blocked. Inspect the synthetic compatibility results above." >> "$GITHUB_STEP_SUMMARY"

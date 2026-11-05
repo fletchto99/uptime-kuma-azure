@@ -1,0 +1,15 @@
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite*
+*.pem
+*.key
+*.pfx
+*.zip
+*.tar
+*.tar.gz
+db-config.json
+data/
+private/
+node_modules/
