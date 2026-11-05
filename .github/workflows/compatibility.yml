@@ -1,11 +1,11 @@
-name: Stock Kuma compatibility
+name: Kuma compatibility
 
 on:
   push:
     branches: [main, fletchto99/kuma-managed-hosting]
-    paths: [Dockerfile, .dockerignore, .github/workflows/compatibility.yml, "tests/**"]
+    paths: [Dockerfile, .dockerignore, .github/workflows/compatibility.yml, "tests/**", "scripts/**", "infra/**"]
   pull_request:
-    paths: [Dockerfile, .dockerignore, .github/workflows/compatibility.yml, "tests/**"]
+    paths: [Dockerfile, .dockerignore, .github/workflows/compatibility.yml, "tests/**", "scripts/**", "infra/**"]
   workflow_dispatch:
 
 permissions:
@@ -28,8 +28,9 @@ jobs:
           bash -n tests/compatibility.sh
           node --check tests/mysql-tls.cjs
           node --check tests/configuration.cjs
+          node --check scripts/patch-database-tls.cjs
           shellcheck tests/compatibility.sh
-      - name: Test stock release with synthetic MySQL and TLS certificates
+      - name: Test patched release with synthetic MySQL and TLS certificates
         run: bash tests/compatibility.sh
       - name: Report failed compatibility gate
         if: failure()

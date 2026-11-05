@@ -72,12 +72,13 @@ docker run --rm --name "$probe" --network "$network" \
 
 start_kuma() {
     local host="$1"
+    local ca_file="${2:-ca.pem}"
     docker run --detach --name "$app" --network "$network" --network-alias kuma \
         --mount "type=bind,source=$work,target=/certs,readonly" \
         -e UPTIME_KUMA_DB_TYPE=mariadb -e "UPTIME_KUMA_DB_HOSTNAME=$host" \
         -e UPTIME_KUMA_DB_PORT=3306 -e UPTIME_KUMA_DB_NAME=kuma \
         -e UPTIME_KUMA_DB_USERNAME=kuma -e UPTIME_KUMA_DB_PASSWORD='SyntheticDatabaseOnly42!' \
-        -e UPTIME_KUMA_DB_SSL=true -e UPTIME_KUMA_DB_CA_FILE=/certs/ca.pem \
+        -e UPTIME_KUMA_DB_SSL=true -e "UPTIME_KUMA_DB_CA_FILE=/certs/$ca_file" \
         kuma-compat >/dev/null
 }
 
@@ -97,10 +98,10 @@ wait_for_kuma() {
 start_kuma mysql
 if ! wait_for_kuma; then
     docker logs "$app"
-    echo "::error::Stock Kuma could not initialize its own schema on MySQL 8.4.9"
+    echo "::error::Kuma could not initialize its own schema on MySQL 8.4.9"
     exit 1
 fi
-echo "PASS: stock Kuma created its schema and started on MySQL 8.4.9 with TLS"
+echo "PASS: Kuma created its schema and started on MySQL 8.4.9 with TLS"
 docker exec -e MYSQL_PWD='SyntheticRootOnly42!' "$db" mysql --protocol=socket -uroot -Nse \
     "SELECT COUNT(*) AS table_count FROM information_schema.tables WHERE table_schema='kuma';"
 
@@ -118,15 +119,31 @@ docker rm --volumes "$app" >/dev/null
 start_kuma wrong-name
 if wait_for_kuma; then
     docker logs "$app"
-    echo "::error::Stock Kuma accepted a trusted certificate for the wrong hostname"
+    echo "::error::Kuma accepted a trusted certificate for the wrong hostname"
     tls_result=1
 else
     docker logs "$app" > "$work/wrong-host.log" 2>&1
     if grep -Eq 'ERR_TLS_CERT_ALTNAME_INVALID|Hostname/IP does not match' "$work/wrong-host.log"; then
-        echo "PASS: stock Kuma rejected the wrong hostname"
+        echo "PASS: actual Kuma app rejected the wrong hostname"
     else
         cat "$work/wrong-host.log"
         echo "::error::Wrong-host connection failed for an unexpected reason"
+        tls_result=1
+    fi
+fi
+
+docker rm --force --volumes "$app" >/dev/null
+start_kuma mysql untrusted-ca.pem
+if wait_for_kuma; then
+    echo "::error::Kuma accepted an untrusted CA"
+    tls_result=1
+else
+    docker logs "$app" > "$work/untrusted-ca.log" 2>&1
+    if grep -Eq 'self-signed certificate in certificate chain|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT' "$work/untrusted-ca.log"; then
+        echo "PASS: actual Kuma app rejected an untrusted CA"
+    else
+        cat "$work/untrusted-ca.log"
+        echo "::error::Untrusted-CA connection failed for an unexpected reason"
         tls_result=1
     fi
 fi
