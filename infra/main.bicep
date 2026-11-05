@@ -1,6 +1,7 @@
 targetScope = 'resourceGroup'
 
-param location string = 'centralus'
+param appLocation string = 'westcentralus'
+param databaseLocation string = 'centralus'
 @minLength(3)
 @maxLength(40)
 param name string
@@ -16,7 +17,7 @@ param databasePassword string
 
 resource plan 'Microsoft.Web/serverfarms@2024-11-01' = {
   name: '${name}-plan'
-  location: location
+  location: appLocation
   kind: 'linux'
   sku: {
     name: 'B1'
@@ -35,7 +36,7 @@ resource plan 'Microsoft.Web/serverfarms@2024-11-01' = {
 // 8.4 is GA, but the stable 2024-12-30 ARM schema still only lists 5.7/8.0.
 resource mysql 'Microsoft.DBforMySQL/flexibleServers@2025-12-01-preview' = {
   name: '${name}-mysql'
-  location: location
+  location: databaseLocation
   sku: {
     name: 'Standard_B1ms'
     tier: 'Burstable'
@@ -92,7 +93,7 @@ resource tlsVersion 'Microsoft.DBforMySQL/flexibleServers/configurations@2024-12
 
 resource app 'Microsoft.Web/sites@2024-11-01' = {
   name: name
-  location: location
+  location: appLocation
   kind: 'app,linux,container'
   properties: {
     serverFarmId: plan.id

@@ -61,8 +61,11 @@ even when the initial credentials come from a secret reference.
 
 ## Current spending boundary
 
-The Central US retail estimate is approximately CAD41.78/month
-for B1 hosting, B1ms MySQL, and the 20 GiB minimum database storage at 730 hours.
+The split-region retail estimate is approximately CAD41.78/month
+for West Central US B1 hosting, Central US B1ms MySQL, and the 20 GiB minimum
+database storage at 730 hours. Cross-region outgoing traffic is additional
+(currently CAD0.0281/GB in each direction); actual traffic and latency must be
+measured. HTTP probes originate from the app's region.
 CAD50/month is a planning allowance, **not a spending cap**. Taxes, backup
 overage, I/O, network egress, asset backups, optional secret-store operations,
 and temporary parallel resources can add costs. The web plan waits for successful

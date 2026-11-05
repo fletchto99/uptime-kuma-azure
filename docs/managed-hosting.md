@@ -84,13 +84,13 @@ Dockerfile patch steps and script, and pass the same negative tests.
 
 ## Resources and spending decision
 
-Central US CAD retail estimates, at 730 hours/month, before taxes:
+Split-region CAD retail estimates, at 730 hours/month, before taxes:
 
 | Component | Assumption | Estimated CAD/month |
 | --- | --- | ---: |
-| Linux App Service plan | B1, one worker, CAD0.025267/hour | 18.44491 |
-| MySQL Flexible Server compute | Burstable B1ms, CAD0.026966/hour | 19.68518 |
-| MySQL data storage | 20 GiB minimum, CAD0.182487/GiB-month | 3.64974 |
+| Linux App Service plan | West Central US B1, one worker, CAD0.025267/hour | 18.44491 |
+| MySQL Flexible Server compute | Central US Burstable B1ms, CAD0.026966/hour | 19.68518 |
+| MySQL data storage | Central US 20 GiB minimum, CAD0.182487/GiB-month | 3.64974 |
 | Core subtotal | No HA or replicas | **41.77983** |
 
 CAD50/month is a planning allowance, not a quotation or hard cap. Credits and
@@ -117,11 +117,18 @@ instance, but the following variable costs must be included in the live estimate
 - **Secrets:** encrypted App Service settings need no dedicated secret service.
   If a Key Vault reference is selected, price its operations and any retention
   requirements separately; do not claim Key Vault is free.
-- **Traffic:** account for internet egress, billable inter-region traffic, and
-  applicable service network charges. Keep the two services in the same region.
+- **Traffic:** the app and database are deliberately in different regions.
+  Cross-region outgoing data is currently CAD0.0281/GB in each direction.
+  Count request and response bytes separately, not the same transfer twice;
+  incoming data is free. Actual monthly volume and database latency are
+  unmeasured, so neither a free transfer allowance nor a latency improvement is
+  assumed. Internet egress and other applicable service network charges remain
+  additional. HTTP monitoring probes originate from West Central US.
 - **Recovery and migration overlap:** point-in-time recovery creates a new
-  billable MySQL server. The old VM and replacement may overlap temporarily;
-  original VM deletion remains a separate destructive approval.
+  billable MySQL server. Any still-provisioned old disks, public IPs, or running
+  compute are separate charges; don't assume that stopping/deallocating compute
+  removes them. Original infrastructure deletion remains a separate destructive
+  approval.
 - **Optional services:** no paid registry, Application Insights/Log Analytics
   workspace, private endpoint, NAT gateway, HA replica, or new Azure DNS zone
   is assumed. Adding any later changes the estimate.
@@ -211,7 +218,9 @@ az deployment group create --resource-group <approved-group> --template-file .\i
 Required parameters: `name`, `image` (the anonymously pullable GHCR digest),
 `operatorIPv4` (one real public IPv4, never `0.0.0.0`),
 `databaseAdministrator`, `databaseAdministratorPassword`, `databasePassword`.
-`location` defaults to `centralus`. Obtain actual subscription/resource names only
+`appLocation` defaults to `westcentralus`; `databaseLocation` defaults to
+`centralus`. A resource group's metadata location does not override either
+resource location. Obtain actual subscription/resource names only
 in the private operator context. Confirm B1/B1ms availability, 20 GiB minimum,
 included I/O allowance, default CA trust, billing/credit applicability and budget
 notifications before creation. A budget alert is not a hard cap.
