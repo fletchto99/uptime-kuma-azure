@@ -7,6 +7,9 @@ or custom persistence controller.
 **Not deployable yet.** The compatibility workflow is a blocking gate, not a
 deployment workflow. It runs only disposable synthetic containers on
 GitHub-hosted runners; it has no Azure credentials or deployment permissions.
+Stock Kuma 2.5.9 starts on MySQL 8.4.9 but accepts a trusted certificate for
+the wrong hostname. See [readiness, costs, and migration boundaries](docs/managed-hosting.md)
+before considering live provisioning.
 
 The Dockerfile contains only the upstream readable version tag and verified
 multi-platform index digest. Weekly Docker-only Dependabot updates can propose

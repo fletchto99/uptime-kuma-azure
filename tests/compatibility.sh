@@ -104,10 +104,13 @@ echo "PASS: stock Kuma created its schema and started on MySQL 8.4.9 with TLS"
 docker exec -e MYSQL_PWD='SyntheticRootOnly42!' "$db" mysql --protocol=socket -uroot -Nse \
     "SELECT COUNT(*) AS table_count FROM information_schema.tables WHERE table_schema='kuma';"
 
-docker run --rm --name "$probe" --network "$network" \
+if ! docker run --rm --name "$probe" --network "$network" \
     --mount "type=bind,source=$work,target=/certs,readonly" \
     --mount "type=bind,source=$PWD/tests/configuration.cjs,target=/test.cjs,readonly" \
-    kuma-compat node /test.cjs || tls_result=1
+    kuma-compat node /test.cjs; then
+    docker logs "$app"
+    tls_result=1
+fi
 
 # Stop before starting a replacement. No overlapping Kuma processes.
 docker stop --time 30 "$app" >/dev/null

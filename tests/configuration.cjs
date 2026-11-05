@@ -18,7 +18,7 @@ function call(event, ...args) {
     return new Promise((resolve, reject) => {
         socket.timeout(15000).emit(event, ...args, (error, result) => {
             if (error) {
-                reject(error);
+                reject(new Error(`${event}: ${error.message}`, { cause: error }));
             } else if (!result?.ok) {
                 reject(new Error(`${event}: ${JSON.stringify(result)}`));
             } else {
@@ -30,8 +30,15 @@ function call(event, ...args) {
 
 async function main() {
     await new Promise((resolve, reject) => {
-        socket.once("connect", resolve);
-        socket.once("connect_error", reject);
+        const timer = setTimeout(() => reject(new Error("Fresh instance did not request setup")), 15000);
+        socket.once("setup", () => {
+            clearTimeout(timer);
+            resolve();
+        });
+        socket.once("connect_error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+        });
         socket.connect();
     });
     await call("setup", "synthetic-admin", password);
