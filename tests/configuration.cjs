@@ -32,7 +32,7 @@ function call(event, ...args) {
 async function main() {
     await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("Fresh instance did not request setup")), 15000);
-        socket.once("setup", () => {
+        socket.once(process.env.VERIFY_IMPORTED_REPORT ? "info" : "setup", () => {
             clearTimeout(timer);
             resolve();
         });
@@ -42,12 +42,19 @@ async function main() {
         });
         socket.connect();
     });
-    await call("setup", "synthetic-admin", password);
+    if (!process.env.VERIFY_IMPORTED_REPORT) {
+        await call("setup", "synthetic-admin", password);
+    }
     await call("login", { username: "synthetic-admin", password });
+    if (process.env.CREATE_ADMIN_ONLY === "true") {
+        return;
+    }
     if (process.env.IMPORT_MANIFEST) {
         const manifest = JSON.parse(fs.readFileSync(process.env.IMPORT_MANIFEST, "utf8"));
         const { restore } = require("/restore.cjs");
-        const result = await restore(socket, manifest, password);
+        const result = process.env.VERIFY_IMPORTED_REPORT
+            ? JSON.parse(fs.readFileSync(process.env.VERIFY_IMPORTED_REPORT, "utf8"))
+            : await restore(socket, manifest, password);
         const db = await mysql.createConnection({
             host: "mysql", user: "kuma", password: "SyntheticDatabaseOnly42!", database: "kuma",
             dateStrings: true,
@@ -82,6 +89,31 @@ async function main() {
             assert.deepEqual(page.publicGroupList[0].monitorList.map((monitor) => monitor.id),
                 manifest.statusPage.groups[0].monitorList.map((monitor) => result.monitorMap[monitor.id]));
             console.log("PASS: stopped SQLite export -> UI API -> MySQL preserved every exported HTTP field, credentials, references, order and app settings; all monitors paused");
+            const testId = (await call("add", {
+                name: "Synthetic runtime probe", type: "http",
+                url: "http://127.0.0.1:3001/setup-database-info",
+                interval: 20, retryInterval: 20, timeout: 5, active: false,
+                accepted_statuscodes: ["200-299"], notificationIDList: {}, conditions: [],
+            })).monitorID;
+            await call("resumeMonitor", testId);
+            try {
+                let healthy = false;
+                for (let attempt = 0; attempt < 30; attempt++) {
+                    const [beats] = await db.execute(
+                        "SELECT status FROM heartbeat WHERE monitor_id = ? ORDER BY id DESC LIMIT 1", [testId],
+                    );
+                    if (beats[0]?.status === 1) {
+                        healthy = true;
+                        break;
+                    }
+                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                }
+                assert.ok(healthy, "Synthetic HTTP monitor did not persist an UP heartbeat to MySQL");
+                console.log("PASS: real Kuma HTTP polling persisted an UP heartbeat to MySQL over verified TLS");
+            } finally {
+                await call("pauseMonitor", testId);
+                await call("deleteMonitor", testId, false);
+            }
         } finally {
             await db.end();
         }

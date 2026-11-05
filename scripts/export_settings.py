@@ -91,7 +91,7 @@ def export_settings(source):
             if key not in fields and key not in ignored and page.get(key) is not None:
                 if default is None or str(page[key]) != default.strip("()'\""):
                     raise ValueError(f"Status-page field requires manual restoration: {key}")
-        config = {target: page.get(column) for column, target in fields.items()}
+        config = {target: page[column] for column, target in fields.items() if column in page}
         config["domainNameList"] = []
         logo = page.get("icon") or "/icon.svg"
         if logo.startswith("/upload/"):

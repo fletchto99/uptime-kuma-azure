@@ -129,8 +129,20 @@ echo "PASS: Kuma created its schema and started on MySQL 8.4.9 with TLS"
 docker exec -e MYSQL_PWD='SyntheticRootOnly42!' "$db" mysql --protocol=socket -uroot -Nse \
     "SELECT COUNT(*) AS table_count FROM information_schema.tables WHERE table_schema='kuma';"
 
+docker run --rm --name "$probe" --network "$network" -e CREATE_ADMIN_ONLY=true \
+    --mount "type=bind,source=$PWD/tests/configuration.cjs,target=/test.cjs,readonly" \
+    kuma-compat node /test.cjs
+# Exercise the real private CLI against loopback, using synthetic input only.
+docker run --rm --name "$probe" --network "container:$app" \
+    -e KUMA_URL=http://127.0.0.1:3001 -e KUMA_USERNAME=synthetic-admin \
+    -e KUMA_PASSWORD='SyntheticAdminOnly42!' -e NODE_PATH=/app/node_modules \
+    --mount "type=bind,source=$work,target=/private" \
+    --mount "type=bind,source=$PWD/scripts/restore-settings.cjs,target=/restore.cjs,readonly" \
+    kuma-compat node /restore.cjs /private/settings.json /private/mapping.json
+
 if ! docker run --rm --name "$probe" --network "$network" \
     -e IMPORT_MANIFEST=/certs/settings.json \
+    -e VERIFY_IMPORTED_REPORT=/certs/mapping.json \
     --mount "type=bind,source=$work,target=/certs,readonly" \
     --mount "type=bind,source=$PWD/tests/configuration.cjs,target=/test.cjs,readonly" \
     --mount "type=bind,source=$PWD/scripts/restore-settings.cjs,target=/restore.cjs,readonly" \

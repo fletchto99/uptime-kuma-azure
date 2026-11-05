@@ -57,7 +57,8 @@ async function restore(socket, manifest, currentPassword) {
     }
     const { config, logo, groups } = manifest.statusPage;
     await call(socket, "addStatusPage", config.title, config.slug);
-    await call(socket, "saveStatusPage", config.slug, config, logo, groups.map((group) => ({
+    const defaults = (await call(socket, "getStatusPage", config.slug)).config;
+    await call(socket, "saveStatusPage", config.slug, { ...defaults, ...config }, logo, groups.map((group) => ({
         name: group.name,
         monitorList: group.monitorList.map((monitor) => ({
             ...monitor, id: monitorMap[monitor.id],
