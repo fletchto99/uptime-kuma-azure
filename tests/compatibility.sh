@@ -16,11 +16,10 @@ db="$network-db"
 app="$network-app"
 probe="$network-probe"
 
-cleanup() {
+trap '
     docker rm --force --volumes "$app" "$probe" "$db" >/dev/null 2>&1 || true
     docker network rm "$network" >/dev/null 2>&1 || true
-}
-trap 'cleanup' EXIT
+' EXIT
 
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=Synthetic test CA" \
     -keyout "$work/ca.key" -out "$work/ca.pem" >/dev/null 2>&1
