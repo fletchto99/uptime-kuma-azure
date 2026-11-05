@@ -50,6 +50,8 @@ async function main() {
         const result = await restore(socket, manifest, password);
         const db = await mysql.createConnection({
             host: "mysql", user: "kuma", password: "SyntheticDatabaseOnly42!", database: "kuma",
+            dateStrings: true,
+            timezone: "Z",
             ssl: { rejectUnauthorized: true, verifyIdentity: true, ca: [fs.readFileSync("/certs/ca.pem")] },
         });
         try {

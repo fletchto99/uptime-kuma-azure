@@ -1,17 +1,23 @@
 # Managed hosting readiness
 
-## Status: blocked before provisioning
+## Status: pilot preparation, no cloud resources created
 
 The approved direction is App Service B1 plus Azure Database for MySQL Flexible
 Server B1ms, using MySQL 8.4 LTS. The approved migration scope is configuration
 only, not historical heartbeats or uptime records. No alternative platform,
 SQLite synchronization service, or self-managed database is proposed here.
 
-The stock Kuma 2.5.9 compatibility gate found missing TLS hostname verification.
-Do not create a deployment around that unresolved requirement. There is no
-deployable IaC or deployment workflow in this checkpoint: those were deliberately
-deferred rather than presented as working. The Dockerfile and read-only hosted
-test are safe to review independently.
+The stock Kuma 2.5.9 gate found missing TLS hostname verification. The user
+approved the smallest source-checked fix: `verifyIdentity: true` at the two
+runtime connection sites and the setup connection. Existing CA handling and
+`rejectUnauthorized: true` are unchanged. `scripts/patch-database-tls.cjs`
+checks both complete upstream source hashes and expected match counts before
+writing anything; upstream changes fail the build rather than silently skipping
+the fix.
+
+`infra/main.bicep` compiles offline. The manual update workflow is disabled;
+there is no provisioning workflow, schedule, auto-merge, or registry webhook.
+No live Azure validation, what-if, creation, DNS change or real import has run.
 
 ## Evidence and limits
 
@@ -29,9 +35,11 @@ produced the following results with no Azure resources or private data:
 | Notification credential and six remapped associations | Pass |
 | Status-page monitor groups/order and app settings | Pass |
 
-The workflow remains intentionally red for the real application hostname
-failure. A future corrected release must pass the actual-app check; merely
-changing the standalone driver control is not a fix.
+That table describes the original stock-release diagnosis.
+[The approved patched-image run](https://github.com/fletchto99/uptime-kuma-azure/actions/runs/41982935591)
+passes actual Kuma startup, actual-app untrusted-CA rejection, actual-app
+wrong-host rejection, and synthetic configuration recreation. The current gate
+also exercises a stopped SQLite export into a fresh MySQL-backed application.
 
 The upstream image index is pinned in `Dockerfile`; it includes Linux amd64,
 arm64, and arm/v7 images. CI verifies the readable tag still resolves to that
@@ -56,8 +64,10 @@ sets `rejectUnauthorized: true` but does not set `verifyIdentity: true`.
 Its bundled
 [mysql2 3.11.5 TLS implementation](https://github.com/sidorares/node-mysql2/blob/v3.11.5/lib/base/connection.js)
 skips the hostname check without that flag. A trusted CA alone is not sufficient.
-The tests include an explicit identity-verifying control and then boot the
-unmodified app with a mismatched hostname.
+The patched image must pass an actual-app mismatched-host test, not only a
+standalone driver test. To remove the patch, verify that a released upstream
+image implements strict identity verification at all three sites, remove the
+Dockerfile patch steps and script, and pass the same negative tests.
 
 ## Resources and spending decision
 
@@ -84,11 +94,13 @@ instance, but the following variable costs must be included in the live estimate
   IOPS, or autoscale I/O consumption can add charges. Confirm the selected
   I/O mode and included allowance before creation; do not silently enable paid
   I/O scaling or storage growth and call the budget fixed.
-- **Assets:** App Service's persistent `/home` uses the filesystem quota already
-  included with the plan. No additional Azure Files account is needed for
-  runtime files. This is not an independent backup. Private off-app asset
-  backups may require a small Azure Blob account, with capacity, transaction,
-  redundancy, and retention charges.
+- **Assets:** App Service's persistent `/home` uses the included filesystem
+  quota; no additional Azure Files account is needed. Current App Service
+  documentation includes automatic hourly backups on Basic, with 30-day
+  retention, no separate storage account, and coverage of custom-container
+  persistent storage. Verify a restorable snapshot in the pilot. Downloadable
+  or on-demand custom backups are optional and require a separately priced
+  SAS-authorized Blob account; none is silently added here.
 - **Secrets:** encrypted App Service settings need no dedicated secret service.
   If a Key Vault reference is selected, price its operations and any retention
   requirements separately; do not claim Key Vault is free.
@@ -112,21 +124,27 @@ a larger paid tier.
 References:
 [App Service persistent storage](https://learn.microsoft.com/azure/app-service/configure-custom-container#use-persistent-shared-storage),
 [MySQL backup billing and restore](https://learn.microsoft.com/azure/mysql/flexible-server/concepts-backup-restore),
-[MySQL tiers/storage](https://learn.microsoft.com/azure/mysql/flexible-server/concepts-service-tiers-storage).
+[MySQL tiers/storage](https://learn.microsoft.com/azure/mysql/flexible-server/concepts-service-tiers-storage),
+[App Service automatic backup coverage](https://learn.microsoft.com/azure/app-service/manage-backup).
 
-## Deployment contract after the TLS blocker is resolved
+## Provisioning and pilot
 
 The parent must approve a concrete IaC preview and live resource estimate before
 creation. The intended bounded setup is:
 
 1. One Linux B1 plan and one app, one Kuma worker, Always On, HTTPS-only,
    application port 3001. No slots, scale-out, registry webhooks, or rolling
-   deployment automation. Validate the contemporary App Service container model
-   in the eventual IaC rather than mixing legacy and sidecar settings.
+   deployment automation. The template uses the current `sitecontainers`
+   model with one main container, `targetPort: '3001'`, anonymous public image
+   pull, and inherited app settings. It does not mix in legacy `WEBSITES_PORT`
+   routing. Startup uses `umask 077` for new runtime secret files.
 2. One MySQL 8.4 B1ms server, 20 GiB starting storage, local backups, seven-day
    retention, no HA/replicas. Require TLS and restrict public database ingress
    to the app's required outbound addresses plus explicitly approved temporary
    operator access. Do not use the blanket "allow all Azure services" rule.
+   MySQL 8.4 is GA, but stable ARM schema `2024-12-30` still excludes it. The
+   server uses documented `2025-12-01-preview` ARM API so Bicep can type-check
+   `version: '8.4'`; this is an API preview, not a preview engine.
 3. Keep uploads, status-page logos, Docker client certificates, and other
    non-database runtime files in the persisted data directory under `/home`;
    enable Linux persistent storage explicitly. Treat that directory as secret:
@@ -137,11 +155,15 @@ creation. The intended bounded setup is:
    Keep the administrator credential only in the private provisioning process.
    Use a runtime secret or Key Vault reference for the application password.
    Do not claim Kuma can refresh Entra database tokens.
-5. Any future Actions deployment uses OIDC and a protected deployment
+5. The manual Actions update uses OIDC and a protected deployment
    environment. Scope the federated identity to the repository/environment and
    minimum Azure deployment permissions. Tenant/subscription/client IDs are
    nonsecret variables, but stay out of public source/logs per the user's
-   privacy requirement. No persistent Azure credentials in Actions. Synthetic
+   privacy requirement. The workflow loads environment variables through the
+   authenticated GitHub API and masks them before placing them in the runner
+   environment or calling Azure login. A failure to read variables fails before
+   Azure login. Verify this environment permission during activation; do not
+   fall back to printing IDs or adding persistent Azure credentials. Synthetic
    PR CI gets no Azure permission and must never read production secrets.
 6. Deploy only an explicitly approved immutable image. Back up the DB and
    assets, stop the app, verify it is stopped, update the image/settings, and
@@ -150,11 +172,114 @@ creation. The intended bounded setup is:
    code against a newly migrated schema. No automatic retry of the entire
    deployment or parallel replacement. Azure platform maintenance is outside
    this procedure; no strict distributed exactly-once claim is made.
-7. Leave manual deployment dispatch, scheduling, and auto-merge disabled until
-   the pilot is explicitly released. Dependabot only proposes Docker updates.
+7. Leave the manual update activation variable unset until the pilot is
+   explicitly released. Dependabot only proposes Docker updates.
    Public CI failures notify through GitHub Actions subscriptions; confirm the
-   owner's delivery settings. Future deployment must have an explicit failure
-   notification path before it is enabled.
+   owner's delivery settings. The workflow emits explicit errors/summary on
+   failure, and the script stops a failed replacement. Confirm GitHub Actions
+   failure-email delivery (and an independent alert if needed) before activation.
+
+After parent approval, use a **private operator terminal**, not public Actions,
+to provide secure parameters and run the preview. Keep the parameters file
+outside the repository and restrict its filesystem ACL. It contains both the
+administrator and the database-scoped runtime password.
+
+```powershell
+az deployment group what-if --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json'
+# Only after reviewing the preview and receiving live-creation approval:
+az deployment group create --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json' --output none
+```
+
+Required parameters: `name`, `image` (the anonymously pullable GHCR digest),
+`operatorIPv4` (one real public IPv4, never `0.0.0.0`),
+`databaseAdministrator`, `databaseAdministratorPassword`, `databasePassword`.
+`location` defaults to `westus`. Obtain actual subscription/resource names only
+in the private operator context. Confirm B1/B1ms availability, 20 GiB minimum,
+included I/O allowance, default CA trust, billing/credit applicability and budget
+notifications before creation. A budget alert is not a hard cap.
+
+Initial app ingress is restricted to that operator IP, including SCM, to avoid
+exposing fresh-account setup. The DB allows the app's possible outbound IPs and
+one temporary operator IP. Create the scoped user using the privately completed
+`infra/database-user.sql` over a MySQL client connection with
+`--ssl-mode=VERIFY_IDENTITY`, the server's canonical
+`<server>.mysql.database.azure.com` hostname, and current trusted Azure root CAs.
+Never use the administrator as the runtime user or enable insecure TLS to get
+past a startup failure.
+
+After setup/import and private verification, the parent can remove the app's
+initial ingress restriction to publish the intended status service and remove
+the temporary DB operator firewall rule. Preserve the app egress rules. Any
+future plan/egress change requires checking those rules again.
+
+Parent obtains `appHostname` and `domainVerificationId` privately from the
+deployment outputs. For the chosen status subdomain, the user creates its CNAME
+to `appHostname` and an `asuid.<subdomain>` TXT containing the verification ID.
+After propagation the parent binds the hostname, creates and binds the free
+App Service managed certificate, and verifies HTTPS. No placeholder DNS values
+are suitable for cutover. No domain bindings or DNS changes are automated here.
+
+## Private configuration tooling
+
+The source inventory was checked privately: six HTTP monitors, one notification,
+six notification links, one status page/group, six group links; no tags,
+maintenance, parent monitors, proxies, Docker hosts or remote browsers. The
+helper deliberately does not implement unused features.
+
+1. Work from a copy of the stopped, complete source directory. Retain the
+   untouched archive. Use Python 3.9+ and Node 22+ on the operator machine;
+   local Docker is not required.
+2. Export with `python .\scripts\export_settings.py C:\Private\kuma\kuma.db C:\Private\kuma\settings.json`.
+   The exporter opens SQLite read-only and refuses to overwrite output.
+   The manifest contains real credentials and is **secret**. Restrict its ACL
+   on Windows; POSIX creation uses mode 0600. It includes a PNG status logo if
+   referenced, keeps private HTTP fields, and maps the six associations.
+3. Review `manualSettings` privately. Known regenerated DB-migration state and
+   JWT secrets are deliberately excluded; other non-general settings are
+   included for manual restoration. Set `manualSettingsReviewed` only after
+   deciding how each is restored or confirming it is obsolete. Unsupported
+   inventory, nondefault unsupported status-page fields or non-PNG upload
+   logos fail export instead of being silently dropped.
+4. Create a fresh administrator in the restricted destination UI. Import before
+   enabling its 2FA, then enroll 2FA separately. Install the helper dependency
+   with `npm ci --ignore-scripts`. Set `KUMA_URL`, `KUMA_USERNAME`,
+   `KUMA_PASSWORD` in the private process environment, not shell arguments or
+   checked-in files. `KUMA_URL` must be HTTPS except loopback testing.
+5. Run `node .\scripts\restore-settings.cjs C:\Private\kuma\settings.json C:\Private\kuma\mapping.json`.
+   The CLI refuses Actions, a nonempty destination or an existing report.
+   It uses the authenticated UI Socket.IO API, not direct MySQL writes.
+   It creates the notification before monitors and remaps status-page ordering.
+   All monitors remain paused. The private mapping records which were originally
+   active for the eventual operator-controlled cutover.
+6. On error, inspect the destination privately. Imports are **not transactional**
+   across UI API calls. Do not rerun against a partial destination; explicitly
+   clean/recreate the disposable pilot only after reviewing what happened.
+   Preserve the source and report. Never print manifests or provider credentials.
+
+The helpers do not copy users, sessions, old IDs, history, SQLite schema, or
+database migration metadata. They are version-specific internal-UI tooling,
+not an upstream-supported universal importer. The full hosted round-trip uses
+synthetic data only; the private acceptance comparison is still mandatory.
+
+## Controlled updates (still disabled)
+
+The code is prepared; do not set `ENABLE_AZURE_DEPLOYMENT=true` yet.
+After pilot approval and merge to `main`, create a protected GitHub environment
+named `production` with required reviewers. Set its nonsecret variables
+`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
+`AZURE_RESOURCE_GROUP`, `AZURE_WEBAPP_NAME`. Configure the Azure federated
+credential for `repo:fletchto99/uptime-kuma-azure:environment:production`.
+Grant only app stop/start/read and sitecontainer update permissions, plus plan
+read permission, scoped to these resources; do not grant Owner or access to
+database credentials. Provisioning remains a separate private operation.
+
+Dispatch requires an approved package digest and explicit verified-backup
+confirmation. The update script rejects multiple workers and slots, serializes
+workflow runs, observes `Stopped` before changing the image, starts once, and
+checks the real application's readiness. It never schedules deployments,
+creates slots, scales out, or automatically rolls back across schema changes.
+The pilot's operator-only ingress will block hosted readiness probes, so this
+workflow is for post-cutover updates, not initial setup.
 
 ## Configuration-only migration and acceptance
 
@@ -169,8 +294,8 @@ proxies, remote browsers, Docker hosts/certificates, OAuth/client credentials,
 and upload assets if present. Some may not be used; record that explicitly.
 Do not infer absence from the public fixture.
 
-Use the released application's UI for this small installation, or its
-authenticated Socket.IO calls only after confirming the exact source fields.
+Use the released application's UI or the bounded helpers above after confirming
+the exact source fields.
 These are internal UI APIs, not a promised stable public migration API:
 
 1. Create a new administrator and re-enroll 2FA separately. Do not copy users,
@@ -201,18 +326,31 @@ acceptance check remain mandatory.
 ## Backup, restore, and rollback acceptance
 
 Managed MySQL point-in-time backups cover the database, not uploaded assets.
-Before each update, record a restorable DB point and take an independent private
-backup of the data directory. Protect and restrict those backups like passwords,
-including copies of `db-config.json`. Test retrieving both before cutover;
-do not assume filesystem persistence equals a backup.
+App Service automatic snapshots cover the persistent data directory, including
+`db-config.json`, without a new storage account. In the pilot, verify the Backups
+page actually has a restorable snapshot and test restoration while monitors are
+paused. Before each update, freeze configuration/asset changes, wait for an
+automatic snapshot newer than the last asset change, and record a matching
+restorable DB point within the seven-day DB window. Only then confirm backups
+in the update workflow. A blind checkbox is not a backup.
+
+App Service automatic backups are hourly, retained 30 days and not downloadable.
+If an immediate/downloadable backup is required, obtain approval for a private
+Blob account and on-demand App Service custom backup; this has extra capacity
+and transaction charges and uses SAS rather than managed-identity authorization.
+MySQL Flexible Server is not included in App Service custom database backups;
+keep using its native managed backup. No paid backup service is enabled here.
 
 To recover: stop Kuma, restore MySQL to a new server, restore the matching
-assets/config, update the private connection settings (hostname/secret reference) and
+assets/config through the App Service Backups restore UI, update private connection settings and
 firewall allowlist, then start a single worker using the compatible recorded
 image. Keep the failed instance stopped. Verify the restored objects and
 notifications before switching traffic. A schema-changing upgrade may require
 DB restore as well as an image rollback. Price and approve the temporary restore
-server, then separately approve its eventual removal.
+server, then separately approve its eventual removal. App Service automatic
+restore does not restore custom domains, TLS bindings, identities or networking;
+reapply/verify those separately from the retained configuration and IaC. Never
+restore into a running slot or leave a second restored monitor app active.
 
 For initial cutover rollback, stop the replacement before asking the parent to
 restore/restart the original service or reverse DNS. This branch must never

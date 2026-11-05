@@ -16,3 +16,7 @@ node_modules/
 __pycache__/
 *.parameters.json
 *.bicepparam
+settings.json
+mapping.json
+*.settings.json
+*.mapping.json

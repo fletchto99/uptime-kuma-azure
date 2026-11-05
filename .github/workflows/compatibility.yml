@@ -71,7 +71,10 @@ jobs:
             --metadata-file "$RUNNER_TEMP/image.json" .
           digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")"
           echo "Published candidate: \`$image@$digest\`" >> "$GITHUB_STEP_SUMMARY"
-          token="$(curl --fail --silent --show-error "https://ghcr.io/token?service=ghcr.io&scope=repository:fletchto99/uptime-kuma-azure:pull" | jq -r .token)"
+          token="$(curl --fail --silent --show-error "https://ghcr.io/token?service=ghcr.io&scope=repository:fletchto99/uptime-kuma-azure:pull" | jq -r .token)" || {
+            echo "::error::Anonymous package access failed. Confirm GHCR package visibility is public before deployment."
+            exit 1
+          }
           curl --fail --silent --show-error --head -H "Authorization: Bearer $token" \
             -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
             "https://ghcr.io/v2/fletchto99/uptime-kuma-azure/manifests/$digest" >/dev/null || {
