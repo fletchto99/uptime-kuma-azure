@@ -15,9 +15,10 @@ network="kuma-compat-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 db="$network-db"
 app="$network-app"
 probe="$network-probe"
+source_app="$network-source"
 
 trap '
-    docker rm --force --volumes "$app" "$probe" "$db" >/dev/null 2>&1 || true
+    docker rm --force --volumes "$app" "$probe" "$db" "$source_app" >/dev/null 2>&1 || true
     docker network rm "$network" >/dev/null 2>&1 || true
 ' EXIT
 
@@ -83,17 +84,40 @@ start_kuma() {
 }
 
 wait_for_kuma() {
+    local container="${1:-$app}"
     for ((i = 0; i < 90; i++)); do
-        if docker exec "$app" node -e \
+        if docker exec "$container" node -e \
             'fetch("http://127.0.0.1:3001/setup-database-info").then(async r => { const d = await r.json(); process.exit(r.ok && d.runningSetup === false ? 0 : 1); }).catch(() => process.exit(1));' \
             >/dev/null 2>&1; then
             return 0
         fi
-        [[ "$(docker inspect --format '{{.State.Running}}' "$app")" == true ]] || return 1
+        [[ "$(docker inspect --format '{{.State.Running}}' "$container")" == true ]] || return 1
         sleep 2
     done
     return 1
 }
+
+docker run --detach --name "$source_app" --network "$network" --network-alias kuma-source \
+    -e UPTIME_KUMA_DB_TYPE=sqlite kuma-compat >/dev/null
+if ! wait_for_kuma "$source_app"; then
+    docker logs "$source_app"
+    exit 1
+fi
+docker run --rm --name "$probe" --network "$network" -e KUMA_TEST_HOST=kuma-source -e SEED_SQLITE=true \
+    --mount "type=bind,source=$PWD/tests/configuration.cjs,target=/test.cjs,readonly" \
+    kuma-compat node /test.cjs
+docker stop --time 30 "$source_app" >/dev/null
+docker cp "$source_app:/app/data/kuma.db" "$work/source.db"
+python3 - "$work/source.db" <<'PY'
+import sqlite3
+import sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("UPDATE monitor SET id=id+100")
+    db.execute("UPDATE monitor_notification SET monitor_id=monitor_id+100, notification_id=notification_id+1000")
+    db.execute("UPDATE monitor_group SET monitor_id=monitor_id+100")
+    db.execute("UPDATE notification SET id=id+1000")
+PY
+python3 scripts/export_settings.py "$work/source.db" "$work/settings.json"
 
 start_kuma mysql
 if ! wait_for_kuma; then
@@ -106,8 +130,10 @@ docker exec -e MYSQL_PWD='SyntheticRootOnly42!' "$db" mysql --protocol=socket -u
     "SELECT COUNT(*) AS table_count FROM information_schema.tables WHERE table_schema='kuma';"
 
 if ! docker run --rm --name "$probe" --network "$network" \
+    -e IMPORT_MANIFEST=/certs/settings.json \
     --mount "type=bind,source=$work,target=/certs,readonly" \
     --mount "type=bind,source=$PWD/tests/configuration.cjs,target=/test.cjs,readonly" \
+    --mount "type=bind,source=$PWD/scripts/restore-settings.cjs,target=/restore.cjs,readonly" \
     kuma-compat node /test.cjs; then
     docker logs "$app"
     tls_result=1

@@ -1,0 +1,10 @@
+{
+  "name": "uptime-kuma-azure-tools",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs"
+  },
+  "dependencies": {
+    "socket.io-client": "4.8.3"
+  }
+}

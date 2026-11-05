@@ -7,7 +7,8 @@ const mysql = require("/app/node_modules/mysql2/promise");
 
 // Synthetic fixture only, NOT a general-purpose importer for private backups.
 const password = "SyntheticAdminOnly42!";
-const socket = io("http://kuma:3001", {
+const baseURL = `http://${process.env.KUMA_TEST_HOST || "kuma"}:3001`;
+const socket = io(baseURL, {
     autoConnect: false,
     reconnection: false,
     transports: ["websocket"],
@@ -43,6 +44,47 @@ async function main() {
     });
     await call("setup", "synthetic-admin", password);
     await call("login", { username: "synthetic-admin", password });
+    if (process.env.IMPORT_MANIFEST) {
+        const manifest = JSON.parse(fs.readFileSync(process.env.IMPORT_MANIFEST, "utf8"));
+        const { restore } = require("/restore.cjs");
+        const result = await restore(socket, manifest, password);
+        const db = await mysql.createConnection({
+            host: "mysql", user: "kuma", password: "SyntheticDatabaseOnly42!", database: "kuma",
+            ssl: { rejectUnauthorized: true, verifyIdentity: true, ca: [fs.readFileSync("/certs/ca.pem")] },
+        });
+        try {
+            const jsonFields = {
+                accepted_statuscodes: "accepted_statuscodes_json",
+                kafkaProducerBrokers: "kafka_producer_brokers",
+                kafkaProducerSaslOptions: "kafka_producer_sasl_options",
+                rabbitmqNodes: "rabbitmq_nodes",
+                conditions: "conditions",
+            };
+            for (const item of manifest.monitors) {
+                const [rows] = await db.execute("SELECT * FROM monitor WHERE id = ?", [result.monitorMap[item.oldId]]);
+                assert.equal(rows[0].active, 0);
+                for (const [key, value] of Object.entries(item.config)) {
+                    if (key === "notificationIDList") {
+                        continue;
+                    }
+                    const actual = rows[0][jsonFields[key] || key];
+                    assert.deepEqual(key in jsonFields ? JSON.parse(actual) : actual, value, `Field lost: ${key}`);
+                }
+            }
+            const [notifications] = await db.query("SELECT config FROM notification");
+            assert.deepEqual(JSON.parse(notifications[0].config), {
+                ...manifest.notifications[0].config, applyExisting: false,
+            });
+            const response = await fetch(`${baseURL}/api/status-page/synthetic`);
+            const page = await response.json();
+            assert.deepEqual(page.publicGroupList[0].monitorList.map((monitor) => monitor.id),
+                manifest.statusPage.groups[0].monitorList.map((monitor) => result.monitorMap[monitor.id]));
+            console.log("PASS: stopped SQLite export -> UI API -> MySQL preserved every exported HTTP field, credentials, references, order and app settings; all monitors paused");
+        } finally {
+            await db.end();
+        }
+        return;
+    }
     const notification = {
         name: "Synthetic notification",
         type: "webhook",
@@ -66,6 +108,9 @@ async function main() {
             retryInterval: 60,
             timeout: 10,
             maxretries: 1,
+            headers: '{"X-Synthetic-Header":"synthetic-private-value"}',
+            basic_auth_user: "synthetic-user",
+            basic_auth_pass: "synthetic-password",
             active: false,
             accepted_statuscodes: ["200-299"],
             notificationIDList: { [notificationMap.get(42)]: true },
@@ -99,7 +144,7 @@ async function main() {
     const restoredSettings = (await call("getSettings")).data;
     assert.equal(restoredSettings.entryPage, "statusPage-synthetic");
     assert.equal(restoredSettings.serverTimezone, "UTC");
-    const pageResponse = await fetch("http://kuma:3001/api/status-page/synthetic");
+    const pageResponse = await fetch(`${baseURL}/api/status-page/synthetic`);
     assert.equal(pageResponse.status, 200);
     const page = await pageResponse.json();
     assert.equal(page.publicGroupList[0].monitorList.length, 6);
@@ -107,6 +152,10 @@ async function main() {
         page.publicGroupList[0].monitorList.map((monitor) => monitor.id),
         publicMonitorIDs,
     );
+    if (process.env.SEED_SQLITE === "true") {
+        console.log("PASS: synthetic SQLite source configured through the application");
+        return;
+    }
 
     const db = await mysql.createConnection({
         host: "mysql",

@@ -1,0 +1,73 @@
+name: Controlled Azure update (disabled until approved)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Approved ghcr.io image with @sha256 digest
+        required: true
+        type: string
+      backups_verified:
+        description: Matching private database recovery point and asset backup were verified
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-singleton
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-slim
+    steps:
+      - name: Require deliberate activation and backup confirmation
+        env:
+          ENABLED: ${{ vars.ENABLE_AZURE_DEPLOYMENT }}
+          BACKUPS: ${{ inputs.backups_verified }}
+          REF: ${{ github.ref }}
+        run: |
+          test "$ENABLED" = true && test "$BACKUPS" = true && test "$REF" = refs/heads/main || {
+            echo "::error::Disabled, unapproved backups, or non-main ref. No Azure operations permitted."
+            exit 1
+          }
+  deploy:
+    needs: gate
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Load and mask nonsecret deployment variables without printing their values
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/environments/production/variables?per_page=100" \
+            | node scripts/load-deployment-vars.cjs
+      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac # v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Stop, update, start and verify
+        env:
+          DEPLOYMENT_APPROVED: "true"
+          BACKUPS_VERIFIED: "true"
+          IMAGE: ${{ inputs.image }}
+        run: bash scripts/deploy.sh
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::Update failed. Check the stopped app and private restore plan; do not blindly retry."
+          echo "Deployment failed. Operator recovery is required; see the private backup and restore plan." >> "$GITHUB_STEP_SUMMARY"

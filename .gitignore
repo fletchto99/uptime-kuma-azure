@@ -13,3 +13,6 @@ db-config.json
 data/
 private/
 node_modules/
+__pycache__/
+*.parameters.json
+*.bicepparam

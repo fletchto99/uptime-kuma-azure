@@ -3,9 +3,9 @@ name: Kuma compatibility
 on:
   push:
     branches: [main, fletchto99/kuma-managed-hosting]
-    paths: [Dockerfile, .dockerignore, .github/workflows/compatibility.yml, "tests/**", "scripts/**", "infra/**"]
+    paths: [Dockerfile, .dockerignore, ".github/workflows/**", "tests/**", "scripts/**", "infra/**", "package*.json"]
   pull_request:
-    paths: [Dockerfile, .dockerignore, .github/workflows/compatibility.yml, "tests/**", "scripts/**", "infra/**"]
+    paths: [Dockerfile, .dockerignore, ".github/workflows/**", "tests/**", "scripts/**", "infra/**", "package*.json"]
   workflow_dispatch:
 
 permissions:
@@ -29,7 +29,15 @@ jobs:
           node --check tests/mysql-tls.cjs
           node --check tests/configuration.cjs
           node --check scripts/patch-database-tls.cjs
-          shellcheck tests/compatibility.sh
+          node --check scripts/restore-settings.cjs
+          shellcheck tests/compatibility.sh scripts/deploy.sh
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm test
+          python3 -m unittest discover -s tests -p '*_test.py'
+      - name: Compile infrastructure without Azure access
+        run: |
+          az bicep install --version v0.48.1
+          az bicep build --file infra/main.bicep --outfile "$RUNNER_TEMP/main.json"
       - name: Test patched release with synthetic MySQL and TLS certificates
         run: bash tests/compatibility.sh
       - name: Report failed compatibility gate
@@ -37,3 +45,40 @@ jobs:
         run: |
           echo "::error::Compatibility gate failed. Do not provision or deploy this candidate."
           echo "Deployment remains blocked. Inspect the synthetic compatibility results above." >> "$GITHUB_STEP_SUMMARY"
+  publish:
+    needs: mysql-tls
+    if: github.event_name == 'push' && github.repository == 'fletchto99/uptime-kuma-azure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Publish only the credential-free tested image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          version="$(awk '$1 == "FROM" { print $2 }' Dockerfile | cut -d@ -f1 | cut -d: -f2)"
+          image=ghcr.io/fletchto99/uptime-kuma-azure
+          docker buildx build --platform linux/amd64 --provenance=false --push \
+            --tag "$image:sha-$GITHUB_SHA" --tag "$image:$version-tls-${GITHUB_SHA:0:12}" \
+            --metadata-file "$RUNNER_TEMP/image.json" .
+          digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")"
+          echo "Published candidate: \`$image@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+          token="$(curl --fail --silent --show-error "https://ghcr.io/token?service=ghcr.io&scope=repository:fletchto99/uptime-kuma-azure:pull" | jq -r .token)"
+          curl --fail --silent --show-error --head -H "Authorization: Bearer $token" \
+            -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+            "https://ghcr.io/v2/fletchto99/uptime-kuma-azure/manifests/$digest" >/dev/null || {
+              echo "::error::Image is not anonymously pullable. Set package visibility to public before deployment."
+              exit 1
+            }
+          echo "Anonymous public pull verified. Deployment remains disabled." >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove ephemeral registry login
+        if: always()
+        run: docker logout ghcr.io
