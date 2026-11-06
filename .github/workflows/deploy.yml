@@ -65,6 +65,7 @@ jobs:
       AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}
       AZURE_MYSQL_SERVER_NAME: ${{ secrets.AZURE_MYSQL_SERVER_NAME }}
       AZURE_FEDERATED_SUBJECT: ${{ secrets.AZURE_FEDERATED_SUBJECT }}
+      AZURE_PRINCIPAL_ID: ${{ secrets.AZURE_PRINCIPAL_ID }}
       GH_TOKEN: ${{ github.token }}
       UPDATE_OPERATION: ${{ needs.gate.outputs.operation }}
       EXPECTED_SHA: ${{ inputs.expected_sha }}

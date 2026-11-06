@@ -27,8 +27,10 @@ make upstream source changes fail visibly. The app is not rebuilt or forked.
 Only the public patch and small managed-health module enter the build context.
 The source-checked `/healthz` route verifies the application and database with a
 bounded, coalesced pooled query and returns only direct 200/503 status JSON.
-App Service Health Check and conservative Linux Auto-Heal use it; SSH access is
-explicitly disabled, while SCM remains operator-only. These controls do not
+App Service Health Check and conservative Linux Auto-Heal use it. SCM remains
+operator-only, including container terminal access. The requested SSH-disable
+flag must be verified separately: the live provider currently omits it on
+readback despite accepting the documented update. These controls do not
 provide multi-instance HA or guarantee immediate recovery.
 
 Docker-only Dependabot checks weekly on Monday at 10:00 UTC (GitHub may delay

@@ -170,8 +170,11 @@ creation. The intended bounded setup is:
    routing. Startup sets Node's `process.umask(0o077)` before loading the stock
    server, without shell quoting that App Service's startup parser can split.
    New runtime secret files therefore retain the restrictive process umask.
-   SSH is explicitly disabled; remote debugging and FTP/basic publishing remain
-   disabled. The bundled Bicep schema predates the documented `sshEnabled`
+   SSH disablement is requested; remote debugging and FTP/basic publishing remain
+   disabled. The live provider currently omits the SSH flag even after accepting
+   the documented update, so explicit disablement is **not verified**; independent
+   operator-only SCM restrictions remain the enforced network control.
+   The bundled Bicep schema predates the documented `sshEnabled`
    field, so only that field has a targeted schema-warning suppression; its live
    provider behavior must be verified. The rest of the app remains type-checked.
    The plan explicitly depends on successful MySQL database provisioning, so a
@@ -375,8 +378,10 @@ GitHub can include stable owner/repository IDs in the subject, for example
 name-only subject. Verify those IDs against the repository metadata before
 configuring the exact federation.
 Assign the custom updater role only on the existing app, its plan and its
-MySQL server. Required actions are app read/start/stop, sitecontainer read/write,
-slot/snapshot read, plan read, database metadata read and native backup read.
+MySQL server. Required actions are app read/start/stop, nonsecret web-configuration
+read (`Microsoft.Web/sites/config/read`, also needed by `az webapp show`),
+sitecontainer read/write, slot/snapshot read, plan read, database metadata read
+and native backup read.
 No subscription Contributor, database data-plane rights, credential-list action
 or permission to create a restored server is needed.
 
@@ -384,6 +389,7 @@ Environment Secrets contain these **nonsecret identifiers**, masked by GitHub:
 `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
 `AZURE_RESOURCE_GROUP`, `AZURE_WEBAPP_NAME`, `AZURE_MYSQL_SERVER_NAME`.
 `AZURE_FEDERATED_SUBJECT` holds the nonsecret subject for native log masking.
+`AZURE_PRINCIPAL_ID` masks the identity object ID in Azure authorization errors.
 No GitHub PAT, app private key or Azure client secret is introduced.
 
 After hosted CI passes and main integration is approved, dispatch
@@ -480,8 +486,12 @@ and only the health/SSH configuration, then start once. Do not leave the health
 path enabled on the older image that lacks it. No
 `CONTAINER_AVAILABILITY_CHECK_MODE=Repair` Windows setting is used.
 
-`sshEnabled=false` disables the App Service container SSH/browser-terminal
-control. It is not a replacement for SCM access restrictions and does not
+The documented `sshEnabled=false` control requests disabling App Service
+container SSH/browser-terminal access. On this deployment, both the ARM update
+and the documented CLI command succeed but readback still omits the property.
+Do **not** claim explicit SSH disablement from a successful write or IaC preview;
+the independently verified operator-only SCM firewall is the current protection.
+The SSH control is not a replacement for SCM access restrictions and does not
 disable all authenticated ARM/Kudu management APIs. The update identity does
 not use SSH. Only web ingress is public; login remains protected by Kuma
 authentication/2FA. HTTPS-only upgrades ordinary HTTP requests, but no HSTS or
