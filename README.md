@@ -10,6 +10,10 @@ guards without Azure credentials. A separate manual OIDC update workflow is
 disabled until deliberately enabled, restricted to `main`, and requires backup
 confirmation and a protected environment.
 
+The next intended deployment places **both services in Central US**. Provisioning
+is paused pending Azure support; earlier split-region proposals are historical,
+not active deployment instructions.
+
 The Dockerfile pins the official readable release tag and multi-platform index.
 It applies a narrow, user-approved TLS hostname-verification patch: stock 2.5.9
 trusts the CA but does not check the database hostname. Full-file SHA256 guards
@@ -61,11 +65,10 @@ even when the initial credentials come from a secret reference.
 
 ## Current spending boundary
 
-The split-region retail estimate is approximately CAD41.78/month
-for West Central US B1 hosting, Central US B1ms MySQL, and the 20 GiB minimum
-database storage at 730 hours. Cross-region outgoing traffic is additional
-(currently CAD0.0281/GB in each direction); actual traffic and latency must be
-measured. HTTP probes originate from the app's region.
+The Central US retail estimate is approximately CAD41.78/month
+for B1 hosting, B1ms MySQL, and the 20 GiB minimum database storage at 730 hours.
+Both services target Central US; cross-region app-to-database traffic is not part
+of this topology. Internet egress and other applicable usage remain additional.
 CAD50/month is a planning allowance, **not a spending cap**. Taxes, backup
 overage, I/O, network egress, asset backups, optional secret-store operations,
 and temporary parallel resources can add costs. The web plan waits for successful

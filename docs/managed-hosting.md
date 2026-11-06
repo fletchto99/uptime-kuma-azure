@@ -7,6 +7,11 @@ Server B1ms, using MySQL 8.4 LTS. The approved migration scope is configuration
 only, not historical heartbeats or uptime records. No alternative platform,
 SQLite synchronization service, or self-managed database is proposed here.
 
+**Current target: Central US for both the app and database.** Provisioning is
+paused pending Azure support. Previous split-region and East US 2 proposals
+are inactive; retain their private failure evidence and encrypted credentials
+as history, not as the next deployment's parameter inputs.
+
 The stock Kuma 2.5.9 gate found missing TLS hostname verification. The user
 approved the smallest source-checked fix: `verifyIdentity: true` at the two
 runtime connection sites and the setup connection. Existing CA handling and
@@ -84,11 +89,11 @@ Dockerfile patch steps and script, and pass the same negative tests.
 
 ## Resources and spending decision
 
-Split-region CAD retail estimates, at 730 hours/month, before taxes:
+Central US CAD retail estimates, at 730 hours/month, before taxes:
 
 | Component | Assumption | Estimated CAD/month |
 | --- | --- | ---: |
-| Linux App Service plan | West Central US B1, one worker, CAD0.025267/hour | 18.44491 |
+| Linux App Service plan | Central US B1, one worker, CAD0.025267/hour | 18.44491 |
 | MySQL Flexible Server compute | Central US Burstable B1ms, CAD0.026966/hour | 19.68518 |
 | MySQL data storage | Central US 20 GiB minimum, CAD0.182487/GiB-month | 3.64974 |
 | Core subtotal | No HA or replicas | **41.77983** |
@@ -117,13 +122,11 @@ instance, but the following variable costs must be included in the live estimate
 - **Secrets:** encrypted App Service settings need no dedicated secret service.
   If a Key Vault reference is selected, price its operations and any retention
   requirements separately; do not claim Key Vault is free.
-- **Traffic:** the app and database are deliberately in different regions.
-  Cross-region outgoing data is currently CAD0.0281/GB in each direction.
-  Count request and response bytes separately, not the same transfer twice;
-  incoming data is free. Actual monthly volume and database latency are
-  unmeasured, so neither a free transfer allowance nor a latency improvement is
-  assumed. Internet egress and other applicable service network charges remain
-  additional. HTTP monitoring probes originate from West Central US.
+- **Traffic:** both services target Central US, so cross-region
+  app-to-database traffic is not part of this topology. Internet egress and
+  other applicable service network charges remain additional. Actual traffic
+  volume and latency are unmeasured; no latency improvement or blanket free
+  usage allowance is assumed.
 - **Recovery and migration overlap:** point-in-time recovery creates a new
   billable MySQL server. Any still-provisioned old disks, public IPs, or running
   compute are separate charges; don't assume that stopping/deallocating compute
@@ -201,7 +204,9 @@ creation. The intended bounded setup is:
    failure, and the script stops a failed replacement. Confirm GitHub Actions
    failure-email delivery (and an independent alert if needed) before activation.
 
-After parent approval, use a **private operator terminal**, not public Actions,
+The commands below are for use only after the support blocker is resolved and
+deployment is explicitly released again. Do not run them as part of the reset.
+After that approval, use a **private operator terminal**, not public Actions,
 to provide secure parameters and run the preview. Keep the parameters file
 outside the repository and restrict its filesystem ACL. It contains both the
 administrator and the database-scoped runtime password.
@@ -210,18 +215,21 @@ real passwords only for the approved creation with output disabled. Do not
 enable debug logging, terminal transcripts, or public output capture.
 
 ```powershell
-az deployment group what-if --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\preview.parameters.json'
+az deployment group what-if --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\preview.parameters.json' appLocation=centralus databaseLocation=centralus
 # Only after reviewing the preview and receiving live-creation approval:
-az deployment group create --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json' --output none
+az deployment group create --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json' appLocation=centralus databaseLocation=centralus --output none
 ```
 
 Required parameters: `name`, `image` (the anonymously pullable GHCR digest),
 `operatorIPv4` (one real public IPv4, never `0.0.0.0`),
 `databaseAdministrator`, `databaseAdministratorPassword`, `databasePassword`.
-`appLocation` defaults to `westcentralus`; `databaseLocation` defaults to
-`centralus`. A resource group's metadata location does not override either
-resource location. Obtain actual subscription/resource names only
-in the private operator context. Confirm B1/B1ms availability, 20 GiB minimum,
+`appLocation` and `databaseLocation` both default to `centralus`. The examples
+also explicitly override any stale region values from private parameter files.
+A resource group's metadata location does not override either resource location.
+Choose fresh globally available names only after the support issue is resolved;
+do not reuse old proposal parameters or assume retained credentials are active.
+Obtain actual subscription/resource names only in the private operator context.
+Confirm B1/B1ms availability, 20 GiB minimum,
 included I/O allowance, default CA trust, billing/credit applicability and budget
 notifications before creation. A budget alert is not a hard cap.
 
