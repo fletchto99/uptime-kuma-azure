@@ -2,7 +2,7 @@
 const assert = require("node:assert/strict");
 
 const REPOSITORY = "fletchto99/uptime-kuma-azure";
-const WORKFLOW = ".github/workflows/compatibility.yml";
+const WORKFLOW = ".github/workflows/publish.yml";
 const IMAGE_PREFIX = `ghcr.io/${REPOSITORY}@sha256:`;
 
 function eligibleMainRelease({ run, mainSha, workflowId }) {

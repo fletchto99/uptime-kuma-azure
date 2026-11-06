@@ -67,13 +67,14 @@ See [the activation, recovery and failure contract](docs/managed-hosting.md#cont
   coalescing, minimal-response and recovery unit tests. Production is not
   deliberately crashed or disconnected for these tests.
 
-`Kuma PR checks` contains only the required `mysql-tls` job, with no skipped
-publication job. It and the main-only `Kuma compatibility` workflow use the
-same local compatibility action, so their test suites stay identical.
-Manual compatibility dispatches remain available for explicit branch validation.
+`Kuma tests` (`test.yml`) contains only the required `mysql-tls` job, with no
+skipped publication job. It and `Kuma publish` (`publish.yml`) use the same
+local compatibility action, so their test suites stay identical.
+Manual `Kuma publish` dispatches remain available for explicit test-only
+branch validation.
 
 Passing main CI publishes a generic credential-free amd64 image to
-GHCR and verifies anonymous pull access. The release reuses the compatibility
+GHCR and verifies anonymous pull access. The release reuses the publishing
 workflow for final validation/publication before its backup-guarded OIDC deploy.
 PRs, feature branches, failed/stale runs and reusable release validations cannot
 trigger another release. Production uses its immutable digest,

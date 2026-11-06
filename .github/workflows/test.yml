@@ -1,4 +1,4 @@
-name: Kuma PR checks
+name: Kuma tests
 
 on:
   pull_request: {}

@@ -339,9 +339,10 @@ controller. It uses the existing managed services and public image package.
 2. Every PR and push to `main` runs the full required `mysql-tls` suite,
    including documentation-only changes, with no CI file filters.
    Feature-branch and tag pushes do not start CI; PRs get one test-only run
-   from `pull-request.yml`, with no publication job. It and the main-only
-   `compatibility.yml` workflow share `.github/actions/compatibility`.
-   Manual compatibility dispatches remain available for branch validation.
+   from `Kuma tests` (`test.yml`), with no publication job. It and
+   `Kuma publish` (`publish.yml`) share `.github/actions/compatibility`.
+   Manual `Kuma publish` dispatches remain available for test-only branch
+   validation.
    Test jobs have no Azure access. They check the readable tag/index digest,
    exact upstream TLS-patch source guards, actual app/MySQL/TLS cases,
    configuration migration, policy tests, shell lint and Bicep.
@@ -355,13 +356,13 @@ controller. It uses the existing managed services and public image package.
    intentionally permits a rebuild and brief serialized restart for docs-only
    changes; no backup, provenance, current-SHA, OIDC or health gate is bypassed.
    PRs test without publishing or deploying.
-   `deploy.yml` listens for successful main compatibility completion. Its
+   `deploy.yml` listens for successful main `Kuma publish` completion. Its
    read-only gate checks the actual workflow ID/path, same repository, push
    event, main branch, completed test/publication jobs and exact current SHA.
    Only trusted main is checked out. PRs, forks, feature branches, failed runs
-   and stale commits cannot deploy. Reusable compatibility calls within a
+   and stale commits cannot deploy. Reusable publishing calls within a
    release are not push runs and cannot recursively start another release.
-5. A release re-runs trusted main CI through the reusable compatibility workflow,
+5. A release re-runs trusted main CI through the reusable publishing workflow,
    publishes the image and passes its exact digest to the deployment job.
    Main is checked again before changes; a stale request fails before stopping
    the app. Feature/PR builds cannot deploy or obtain production secrets.

@@ -9,9 +9,17 @@ function readGithubFile(...parts) {
         .replaceAll("\r\n", "\n");
 }
 
-const workflow = readGithubFile("workflows", "compatibility.yml");
-const pullRequest = readGithubFile("workflows", "pull-request.yml");
+const workflow = readGithubFile("workflows", "publish.yml");
+const pullRequest = readGithubFile("workflows", "test.yml");
 const action = readGithubFile("actions", "compatibility", "action.yml");
+
+test("workflow names describe tests and publication without retaining duplicate entry points", () => {
+    assert.match(workflow, /^name: Kuma publish$/m);
+    assert.match(pullRequest, /^name: Kuma tests$/m);
+    for (const name of ["compatibility.yml", "pull-request.yml"]) {
+        assert.equal(fs.existsSync(path.join(__dirname, "..", ".github", "workflows", name)), false);
+    }
+});
 
 test("PRs run once, including documentation-only changes, without a publication job", () => {
     assert.match(pullRequest, /^on:\n  pull_request: \{\}\n\npermissions:/m);

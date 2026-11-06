@@ -29,7 +29,7 @@ function release() {
         fixture.requests.push(request);
         const responses = {
             "commits/main": { sha: fixture.mainSha },
-            "actions/workflows/compatibility.yml": fixture.workflow,
+            "actions/workflows/publish.yml": fixture.workflow,
             "actions/runs/7": fixture.run,
             "actions/runs/7/jobs?per_page=100": fixture.jobs,
         };
@@ -39,12 +39,12 @@ function release() {
     return fixture;
 }
 
-test("successful current-main push compatibility releases using read-only source-run verification", async () => {
+test("successful current-main push publication releases using read-only source-run verification", async () => {
     const fixture = release();
     assert.equal(eligibleMainRelease(fixture), true);
     assert.deepEqual(await releaseGate(fixture), { operation: "release", expectedSha: fixture.mainSha });
     assert.deepEqual(fixture.requests, [
-        "commits/main", "actions/workflows/compatibility.yml", "actions/runs/7",
+        "commits/main", "actions/workflows/publish.yml", "actions/runs/7",
         "actions/runs/7/jobs?per_page=100",
     ]);
 });
@@ -62,6 +62,8 @@ test("PR, fork, feature, failed, stale and reusable release runs never qualify",
         (x) => { x.run.head_sha = "b".repeat(40); },
         (x) => { x.run.workflow_id = 12; },
         (x) => { x.run.path = ".github/workflows/untrusted.yml"; },
+        (x) => { x.run.path = ".github/workflows/compatibility.yml"; },
+        (x) => { x.run.path = ".github/workflows/test.yml"; },
         (x) => { x.run.repository.full_name = "fork/repo"; },
         (x) => { x.run.head_repository.full_name = "fork/repo"; },
     ]) {
@@ -156,7 +158,9 @@ test("only immutable package digests qualify; workflow wiring never merges or re
     assert.equal(fs.existsSync(path.join(root, "scripts", "merge-dependabot.cjs")), false);
     assert.equal(fs.existsSync(path.join(root, ".github", "workflows", "dependabot-merge.yml")), false);
     const deployment = fs.readFileSync(path.join(root, ".github", "workflows", "deploy.yml"), "utf8");
-    assert.match(deployment, /workflow_run:\s+workflows: \["Kuma compatibility"\]\s+branches: \[main\]\s+types: \[completed\]/);
+    assert.equal(WORKFLOW, ".github/workflows/publish.yml");
+    assert.match(deployment, /workflow_run:\s+workflows: \["Kuma publish"\]\s+branches: \[main\]\s+types: \[completed\]/);
+    assert.match(deployment, /uses: \.\/\.github\/workflows\/publish\.yml/);
     assert.match(deployment, /github\.event\.workflow_run\.event == 'push'/);
     assert.match(deployment, /github\.ref == 'refs\/heads\/main'/);
     assert.match(deployment, /ref: \$\{\{ github\.sha \}\}/);
