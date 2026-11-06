@@ -1,73 +1,107 @@
-name: Controlled Azure update (disabled until approved)
-
+name: Controlled Kuma update
 on:
   workflow_dispatch:
     inputs:
-      image:
-        description: Approved ghcr.io image with @sha256 digest
+      operation:
+        description: Read-only authorization/recovery verification, same-image restart, or tested main release
         required: true
+        default: verify
+        type: choice
+        options: [verify, noop, release]
+      expected_sha:
+        description: Expected current main SHA (required for automatic release dispatch)
+        required: false
         type: string
-      backups_verified:
-        description: Matching private database recovery point and asset backup were verified
-        required: true
-        default: false
-        type: boolean
-
 permissions:
   contents: read
-
 concurrency:
   group: production-singleton
   cancel-in-progress: false
-
 jobs:
   gate:
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-24.04
+    outputs:
+      operation: ${{ steps.gate.outputs.operation }}
     steps:
-      - name: Require deliberate activation and backup confirmation
+      - name: Require current main and an explicitly enabled release policy
+        id: gate
         env:
-          ENABLED: ${{ vars.ENABLE_AZURE_DEPLOYMENT }}
-          BACKUPS: ${{ inputs.backups_verified }}
-          REF: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
+          OPERATION: ${{ inputs.operation }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          ENABLED: ${{ vars.ENABLE_CONTROLLED_UPDATES }}
         run: |
-          test "$ENABLED" = true && test "$BACKUPS" = true && test "$REF" = refs/heads/main || {
-            echo "::error::Disabled, unapproved backups, or non-main ref. No Azure operations permitted."
-            exit 1
-          }
-  deploy:
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = fletchto99/uptime-kuma-azure
+          test "$GITHUB_REF" = refs/heads/main
+          case "$OPERATION" in verify|noop) ;; release) test "$ENABLED" = true ;; *) exit 1 ;; esac
+          test -z "$EXPECTED_SHA" || test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$GITHUB_SHA"
+          echo "operation=$OPERATION" >> "$GITHUB_OUTPUT"
+  validate:
     needs: gate
+    if: needs.gate.outputs.operation == 'release'
+    uses: ./.github/workflows/compatibility.yml
+    with:
+      publish: true
+    permissions:
+      contents: read
+      packages: write
+  deploy:
+    needs: [gate, validate]
+    if: always() && !cancelled() && needs.gate.result == 'success' && (needs.gate.outputs.operation != 'release' || needs.validate.result == 'success')
     environment: production
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
-      actions: read
-      deployments: read
       id-token: write
+      issues: write
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}
+      AZURE_MYSQL_SERVER_NAME: ${{ secrets.AZURE_MYSQL_SERVER_NAME }}
+      GH_TOKEN: ${{ github.token }}
+      UPDATE_OPERATION: ${{ needs.gate.outputs.operation }}
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      RELEASE_IMAGE: ${{ needs.validate.outputs.image }}
+      DEPLOYMENT_FAILURE_FILE: ${{ runner.temp }}/deployment-failure.json
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - name: Load and mask nonsecret deployment variables without printing their values
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Require masked environment identifiers
         run: |
-          set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/environments/production/variables?per_page=100" \
-            | node scripts/load-deployment-vars.cjs
+          test -n "$AZURE_CLIENT_ID" && test -n "$AZURE_TENANT_ID" && test -n "$AZURE_SUBSCRIPTION_ID"
+          test -n "$AZURE_RESOURCE_GROUP" && test -n "$AZURE_WEBAPP_NAME" && test -n "$AZURE_MYSQL_SERVER_NAME"
       - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac # v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
-      - name: Stop, update, start and verify
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Verify scoped reads and native recovery metadata
+        id: recovery
+        run: node scripts/recovery-gate.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: recovery-metadata
+          path: ${{ runner.temp }}/recovery.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Stop, update the exact digest, start and verify
+        if: env.UPDATE_OPERATION != 'verify'
         env:
           DEPLOYMENT_APPROVED: "true"
-          BACKUPS_VERIFIED: "true"
-          IMAGE: ${{ inputs.image }}
+          BACKUPS_VERIFIED: ${{ steps.recovery.outputs.verified }}
+          IMAGE: ${{ steps.recovery.outputs.image }}
+          REQUIRE_CURRENT_MAIN: "true"
         run: bash scripts/deploy.sh
-      - name: Report failure
+      - name: Report an actual deployment failure independently of Kuma
         if: failure()
-        run: |
-          echo "::error::Update failed. Check the stopped app and private restore plan; do not blindly retry."
-          echo "Deployment failed. Operator recovery is required; see the private backup and restore plan." >> "$GITHUB_STEP_SUMMARY"
+        run: node scripts/deployment-failure.cjs
+      - name: Close the Azure login
+        if: always()
+        run: az logout

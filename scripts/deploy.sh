@@ -17,11 +17,23 @@ app=(--resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_WEBAPP_NAME" --only
 stopping=false
 trap '
     if [[ "$stopping" == true ]]; then
+        if [[ -n "${DEPLOYMENT_FAILURE_FILE:-}" ]]; then
+            printf "{\"deploymentStarted\":true}\n" > "$DEPLOYMENT_FAILURE_FILE"
+        fi
         az webapp stop "${app[@]}" --output none || echo "::error::Failed to stop app; operator intervention required."
     fi
     echo "::error::Deployment failed. App is left stopped when possible; inspect privately and restore matching DB/assets if needed."
     exit 1
 ' ERR INT TERM
+
+if [[ "${REQUIRE_CURRENT_MAIN:-}" == true ]]; then
+    [[ "${GITHUB_REF:-}" == refs/heads/main && "${GITHUB_REPOSITORY:-}" == fletchto99/uptime-kuma-azure ]]
+    current_main="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+    [[ "$current_main" == "$GITHUB_SHA" ]] || {
+        echo "::error::Main moved after recovery checks; no app change attempted."
+        exit 1
+    }
+fi
 
 plan_id="$(az webapp show "${app[@]}" --query serverFarmId --output tsv)"
 workers="$(az appservice plan show --ids "$plan_id" --query sku.capacity --output tsv --only-show-errors)"
