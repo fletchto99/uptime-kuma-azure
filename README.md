@@ -36,9 +36,11 @@ provide multi-instance HA or guarantee immediate recovery.
 Docker-only Dependabot checks weekly on Monday at 10:00 UTC (GitHub may delay
 scheduled work). **The owner reviews and merges Dependabot PRs** after the
 required compatibility CI passes. Nothing automatically approves or merges them.
-After an owner merge, successful current-main push compatibility starts the
-tested, serialized deployment automatically. Major versions require a separate
-manual change.
+Every PR runs the full required `mysql-tls` suite, including documentation-only
+changes. After an owner merge that matches the existing main-push path filters,
+successful current-main compatibility starts the tested, serialized deployment
+automatically. Documentation-only merges do not publish or deploy. Major
+versions require a separate manual change.
 An update that changes either patch
 target requires reviewing the source and guards. Remove the patch when upstream
 sets `verifyIdentity: true` for all database connection paths, then rerun the
