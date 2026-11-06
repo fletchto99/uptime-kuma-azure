@@ -87,7 +87,7 @@ wait_for_kuma() {
     local container="${1:-$app}"
     for ((i = 0; i < 90; i++)); do
         if docker exec "$container" node -e \
-            'fetch("http://127.0.0.1:3001/setup-database-info").then(async r => { const d = await r.json(); process.exit(r.ok && d.runningSetup === false ? 0 : 1); }).catch(() => process.exit(1));' \
+            'fetch("http://127.0.0.1:3001/healthz").then(async r => { const d = await r.json(); process.exit(r.status === 200 && d.status === "ok" ? 0 : 1); }).catch(() => process.exit(1));' \
             >/dev/null 2>&1; then
             return 0
         fi
@@ -150,6 +150,24 @@ if ! docker run --rm --name "$probe" --network "$network" \
     docker logs "$app"
     tls_result=1
 fi
+
+docker run --rm --name "$probe" --network "$network" \
+    --mount "type=bind,source=$PWD/tests/health-http.cjs,target=/test.cjs,readonly" \
+    kuma-compat node /test.cjs
+docker network disconnect "$network" "$db"
+sleep 3
+health_result=0
+docker run --rm --name "$probe" --network "$network" -e EXPECTED_HEALTH_STATUS=503 \
+    --mount "type=bind,source=$PWD/tests/health-http.cjs,target=/test.cjs,readonly" \
+    kuma-compat node /test.cjs || health_result=$?
+docker network connect --alias mysql --alias wrong-name "$network" "$db"
+if ! wait_for_kuma; then
+    docker logs "$app"
+    echo "::error::Application/database health did not recover after synthetic connectivity restoration"
+    exit 1
+fi
+[[ "$health_result" == 0 ]] || exit "$health_result"
+echo "PASS: actual app health recovered after synthetic database disconnection"
 
 # Stop before starting a replacement. No overlapping Kuma processes.
 docker stop --time 30 "$app" >/dev/null

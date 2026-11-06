@@ -62,9 +62,8 @@ az webapp sitecontainers update "${app[@]}" --container-name main --image "$IMAG
 az webapp start "${app[@]}" --output none
 healthy=false
 for ((i = 0; i < 60; i++)); do
-    # This route exists only after Kuma's DB initialization, not on its DB setup server.
-    if body="$(curl --fail --silent --show-error --max-time 5 "https://$hostname/setup-database-info" 2>/dev/null)" \
-        && node -e 'const d=JSON.parse(process.argv[1]); process.exit(d.runningSetup === false && d.needSetup === false ? 0 : 1)' "$body" 2>/dev/null; then
+    if body="$(curl --fail --silent --show-error --max-time 5 "https://$hostname/healthz" 2>/dev/null)" \
+        && node -e 'const d=JSON.parse(process.argv[1]); process.exit(d.status === "ok" ? 0 : 1)' "$body" 2>/dev/null; then
         healthy=true
         break
     fi

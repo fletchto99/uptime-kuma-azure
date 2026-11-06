@@ -107,6 +107,32 @@ resource app 'Microsoft.Web/sites@2024-11-01' = {
       minTlsVersion: '1.2'
       scmMinTlsVersion: '1.2'
       ftpsState: 'Disabled'
+      // Documented live config field; the bundled 2024 schema predates this control.
+      #disable-next-line BCP037
+      sshEnabled: false
+      remoteDebuggingEnabled: false
+      healthCheckPath: '/healthz'
+      autoHealEnabled: true
+      autoHealRules: {
+        triggers: {
+          statusCodesRange: [{
+            statusCodes: '500-599'
+            path: '/healthz'
+            count: 5
+            timeInterval: '00:10:00'
+          }]
+          slowRequestsWithPath: [{
+            path: '/healthz'
+            timeTaken: '00:00:30'
+            count: 3
+            timeInterval: '00:10:00'
+          }]
+        }
+        actions: {
+          actionType: 'Recycle'
+          minProcessExecutionTime: '00:30:00'
+        }
+      }
       ipSecurityRestrictionsDefaultAction: publicAccess ? 'Allow' : 'Deny'
       ipSecurityRestrictions: publicAccess ? [] : [
         {
@@ -138,6 +164,7 @@ resource app 'Microsoft.Web/sites@2024-11-01' = {
         { name: 'UPTIME_KUMA_DB_SSL', value: 'true' }
         { name: 'UPTIME_KUMA_DB_POOL_MAX_CONNECTIONS', value: '5' }
         { name: 'DOCKER_ENABLE_CI', value: 'false' }
+        { name: 'WEBSITE_HEALTHCHECK_MAXPINGFAILURES', value: '5' }
       ]
     }
   }

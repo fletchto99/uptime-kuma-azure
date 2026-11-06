@@ -40,7 +40,7 @@ else:
 import os, sys
 if os.environ.get("FAIL_HEALTH"):
     sys.exit(22)
-print('{"runningSetup":false,"needSetup":false}')
+print('{"status":"ok"}')
 """)
             sleep = root / "sleep"
             sleep.write_text("#!/bin/sh\nexit 0\n")

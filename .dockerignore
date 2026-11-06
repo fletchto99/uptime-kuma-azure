@@ -2,3 +2,5 @@
 !Dockerfile
 !scripts/
 !scripts/patch-database-tls.cjs
+!runtime/
+!runtime/health.cjs

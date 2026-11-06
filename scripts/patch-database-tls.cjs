@@ -22,7 +22,20 @@ const patches = targets.map(([relative, expectedHash, expectedCount]) => {
     return { file, content, expectedCount };
 });
 
+const serverFile = "/app/server/server.js";
+const serverSource = fs.readFileSync(serverFile, "utf8");
+assert.equal(createHash("sha256").update(serverSource).digest("hex"),
+    "2122c0a3220132385c2aa72ecf496b68ce022a5ce65bca40e2a110159612b08c",
+    "server/server.js changed upstream; review the health route insertion");
+const marker = "    // Robots.txt\n";
+assert.equal(serverSource.split(marker).length - 1, 1, "Unexpected health route insertion point");
+patches.push({
+    file: serverFile,
+    content: serverSource.replace(marker, '    require("./managed-health").register(app, R, log);\n\n' + marker),
+    expectedCount: 1,
+});
+
 for (const { file, content, expectedCount } of patches) {
     fs.writeFileSync(file, content);
-    console.log(`Enabled database TLS hostname verification at ${expectedCount} connection site(s) in ${file}`);
+    console.log(`Applied ${expectedCount} source-checked managed-hosting change(s) in ${file}`);
 }
