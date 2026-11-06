@@ -48,28 +48,50 @@ test("database errors are logged generically and recovery is explicit", async ()
     assert.match(log.messages[1][1], /recovered/);
 });
 
-test("public route has a fixed bounded SELECT and minimal direct 200/503 response", async () => {
-    for (const healthy of [true, false]) {
-        let handler;
-        const app = { get(route, callback) { assert.equal(route, "/healthz"); handler = callback; } };
-        const R = { knex: { client: { config: { client: "mysql2" } }, raw(sql) {
-            assert.equal(sql, "SELECT 1");
-            return { timeout(milliseconds, options) {
-                assert.equal(milliseconds, 1000);
-                assert.deepEqual(options, { cancel: true });
-                return healthy ? Promise.resolve() : Promise.reject(new Error("private details"));
-            } };
-        } } };
-        register(app, R, logger());
-        const result = {};
-        const response = {
-            set(name, value) { result[name] = value; return this; },
-            status(code) { result.code = code; return this; },
-            json(body) { result.body = body; },
-        };
-        await handler({}, response);
-        assert.equal(result.code, healthy ? 200 : 503);
-        assert.equal(result["Cache-Control"], "no-store");
-        assert.deepEqual(result.body, { status: healthy ? "ok" : "unavailable" });
+test("public route checks read-only flags with one bounded SELECT and minimal direct responses", async (t) => {
+    for (const { name, rows, healthy = false, reject = false } of [
+        { name: "writable", rows: [{ read_only: 0, super_read_only: 0 }], healthy: true },
+        { name: "read-only", rows: [{ read_only: 1, super_read_only: 0 }] },
+        { name: "super read-only", rows: [{ read_only: 1, super_read_only: 1 }] },
+        { name: "super read-only alone", rows: [{ read_only: 0, super_read_only: 1 }] },
+        { name: "missing flags", rows: [{}] },
+        { name: "missing super read-only flag", rows: [{ read_only: 0 }] },
+        { name: "missing read-only flag", rows: [{ super_read_only: 0 }] },
+        { name: "unexpected flag types", rows: [{ read_only: "0", super_read_only: "0" }] },
+        { name: "no rows", rows: [] },
+        { name: "missing rows" },
+        { name: "extra rows", rows: [{ read_only: 0, super_read_only: 0 }, {}] },
+        { name: "database error", reject: true },
+    ]) {
+        await t.test(name, async () => {
+            let handler;
+            let calls = 0;
+            const log = logger();
+            const app = { get(route, callback) { assert.equal(route, "/healthz"); handler = callback; } };
+            const R = { knex: { client: { config: { client: "mysql2" } }, raw(sql) {
+                calls++;
+                assert.equal(sql, "SELECT @@GLOBAL.read_only AS read_only, @@GLOBAL.super_read_only AS super_read_only");
+                return { timeout(milliseconds, options) {
+                    assert.equal(milliseconds, 1000);
+                    assert.deepEqual(options, { cancel: true });
+                    return reject ? Promise.reject(new Error("private details")) : Promise.resolve([rows, []]);
+                } };
+            } } };
+            register(app, R, log);
+            const result = {};
+            const response = {
+                set(name, value) { result[name] = value; return this; },
+                status(code) { result.code = code; return this; },
+                json(body) { result.body = body; },
+            };
+            await handler({}, response);
+            assert.equal(result.code, healthy ? 200 : 503);
+            assert.equal(result["Cache-Control"], "no-store");
+            assert.deepEqual(result.body, { status: healthy ? "ok" : "unavailable" });
+            assert.equal(calls, 1);
+            assert.deepEqual(log.messages, healthy ? [] : [
+                ["health", "Application database health check failed or timed out"],
+            ]);
+        });
     }
 });

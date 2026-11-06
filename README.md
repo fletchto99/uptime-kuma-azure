@@ -27,8 +27,10 @@ It applies a narrow, user-approved TLS hostname-verification patch: stock 2.5.9
 trusts the CA but does not check the database hostname. Full-file SHA256 guards
 make upstream source changes fail visibly. The app is not rebuilt or forked.
 Only the public patch and small managed-health module enter the build context.
-The source-checked `/healthz` route verifies the application and database with a
-bounded, coalesced pooled query and returns only direct 200/503 status JSON.
+The source-checked `/healthz` route verifies the application, database connectivity
+and MySQL read-only flags with a bounded, coalesced pooled query and returns only
+direct 200/503 status JSON. Read-only or unknown database state returns 503;
+the probe never writes data.
 App Service Health Check and conservative Linux Auto-Heal use it. SCM remains
 operator-only, including container terminal access. The requested SSH-disable
 flag must be verified separately: the live provider currently omits it on
@@ -37,8 +39,9 @@ provide multi-instance HA or guarantee immediate recovery.
 
 ## Updates
 
-Docker-only Dependabot checks weekly on Monday at 10:00 UTC (GitHub may delay
-scheduled work). **The owner reviews and merges Dependabot PRs** after the
+Dependabot checks Docker images and SHA-pinned GitHub Actions weekly on Monday
+at 10:00 UTC (GitHub may delay scheduled work). GitHub Actions updates are grouped
+into one PR. **The owner reviews and merges Dependabot PRs** after the
 required compatibility CI passes. Nothing automatically approves or merges them.
 Every PR and push to `main` runs the full required `mysql-tls` suite, without
 file filters, including documentation-only changes. Feature-branch and tag
@@ -46,7 +49,7 @@ pushes do not start CI; opening or updating a PR starts one test-only run.
 Publishing and deployment remain main-only: every successful current-main push
 is eligible for the guarded release. Documentation-only main pushes
 intentionally rebuild and can briefly restart Kuma after the existing backup,
-identity and health gates pass. Major versions require a separate manual change.
+identity and health gates pass. Major Docker versions require a separate manual change.
 An update that changes any patched source file requires reviewing its guards.
 `scripts/patch-managed-hosting.cjs` handles both TLS verification and health-route
 registration. Once upstream verifies all database hostnames, remove only the TLS
@@ -68,7 +71,7 @@ See [the activation, recovery and failure contract](docs/managed-hosting.md#cont
 - Authenticated UI API configuration persisted to MySQL: paused HTTP monitors,
   HTTP fields, notification credentials/links, status-page order and app settings.
 - Actual HTTP polling with an UP heartbeat stored in MySQL over verified TLS.
-- Actual healthy/DB-disconnected/concurrent health requests, plus timeout,
+- Actual healthy/read-only/DB-disconnected/concurrent health requests, plus timeout,
   coalescing, minimal-response and recovery unit tests. Production is not
   deliberately crashed or disconnected for these tests.
 

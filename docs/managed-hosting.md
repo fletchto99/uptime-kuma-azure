@@ -271,9 +271,11 @@ are suitable for cutover. No domain bindings or DNS changes are automated here.
 The pipeline is deterministic GitHub Actions, not an AI agent or runtime
 controller. It uses the existing managed services and public image package.
 
-1. Weekly Docker-only Dependabot checks run Monday at 10:00 UTC; GitHub scheduling
-   is best-effort, not an exact maintenance-time guarantee. Major updates are
-   ignored by Dependabot and require a separate manual change.
+1. Weekly Dependabot checks for Docker images and SHA-pinned GitHub Actions run
+   Monday at 10:00 UTC; GitHub scheduling is best-effort, not an exact
+   maintenance-time guarantee. GitHub Actions updates, including major versions,
+   are grouped into one owner-reviewed PR. Major Docker updates are ignored by
+   Dependabot and require a separate manual change.
 2. Every PR and push to `main` runs the full required `mysql-tls` suite,
    including documentation-only changes, with no CI file filters.
    Feature-branch and tag pushes do not start CI; PRs get one test-only run
@@ -410,8 +412,12 @@ SCM remains operator-only; this workflow is not for initial setup.
 
 Released Kuma's `/setup-database-info` returns setup flags; it is not an ongoing
 database probe. The managed image instead registers `/healthz` after database
-initialization. It executes a tiny `SELECT 1` through Kuma's existing Knex pool,
-uses a one-second query timeout (with supported MySQL cancellation), and gives
+initialization. It reads MySQL's global `read_only` and `super_read_only` flags
+through Kuma's existing Knex pool in one query. Both must be explicitly off;
+read-only or missing/unrecognized state returns 503, even when ordinary reads
+still succeed. This detects server read-only mode, not every possible write
+failure or stalled monitor; the probe never writes data.
+It uses a one-second query timeout (with supported MySQL cancellation), and gives
 HTTP requests a 1.5-second deadline. Concurrent requests share one check and
 results are cached for two seconds. If pool acquisition or query completion
 outlives the HTTP deadline, no additional health task is queued until it settles.

@@ -38,9 +38,16 @@ function createCheck(query, log, { deadlineMs = 1500, cacheMs = 2000 } = {}) {
 }
 
 function register(app, R, log) {
-    const check = createCheck(() => R.knex.raw("SELECT 1").timeout(1000, {
-        cancel: R.knex.client.config.client === "mysql2",
-    }), log);
+    const check = createCheck(async () => {
+        const [rows] = await R.knex.raw(
+            "SELECT @@GLOBAL.read_only AS read_only, @@GLOBAL.super_read_only AS super_read_only"
+        ).timeout(1000, {
+            cancel: R.knex.client.config.client === "mysql2",
+        });
+        if (rows?.length !== 1 || rows[0]?.read_only !== 0 || rows[0]?.super_read_only !== 0) {
+            throw new Error("Database is read-only or its read-only state is unavailable");
+        }
+    }, log);
     app.get("/healthz", async (_request, response) => {
         const healthy = await check();
         if (!response.destroyed) {
