@@ -38,6 +38,25 @@ function validate(manifest) {
     assert.ok(members.every((monitor) => ids.has(monitor.id)), "Unknown public monitor reference");
 }
 
+function initializeTimezone(socket, timezone) {
+    assert.ok(typeof timezone === "string" && timezone.length > 0, "Invalid source timezone");
+    return new Promise((resolve, reject) => {
+        const onInfo = (info) => {
+            if (info.serverTimezone === timezone) {
+                clearTimeout(timer);
+                socket.off("info", onInfo);
+                resolve();
+            }
+        };
+        const timer = setTimeout(() => {
+            socket.off("info", onInfo);
+            reject(new Error("Timezone initialization was not confirmed"));
+        }, 15000);
+        socket.on("info", onInfo);
+        socket.emit("initServerTimezone", timezone);
+    });
+}
+
 async function restore(socket, manifest, currentPassword) {
     validate(manifest);
     const notificationId = (await call(socket, "addNotification", {
@@ -65,6 +84,10 @@ async function restore(socket, manifest, currentPassword) {
         })),
     })));
     await call(socket, "setSettings", manifest.settings, currentPassword);
+    if (Object.hasOwn(manifest.settings, "serverTimezone")) {
+        // Regenerate the marker so first browser login cannot replace the restored preference.
+        await initializeTimezone(socket, manifest.settings.serverTimezone);
+    }
     const actualSettings = (await call(socket, "getSettings")).data;
     for (const [key, value] of Object.entries(manifest.settings)) {
         assert.deepEqual(actualSettings[key], value, "A setting did not round-trip");
@@ -117,7 +140,7 @@ async function main() {
     }
 }
 
-module.exports = { restore, validate, call, login };
+module.exports = { restore, validate, call, login, initializeTimezone };
 if (require.main === module) {
     main().catch((error) => {
         const detail = error.name === "Error" || error.code === "ERR_ASSERTION"

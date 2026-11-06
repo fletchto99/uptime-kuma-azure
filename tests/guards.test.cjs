@@ -4,7 +4,8 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const fs = require("node:fs");
 const vm = require("node:vm");
-const { validate } = require("../scripts/restore-settings.cjs");
+const { EventEmitter } = require("node:events");
+const { validate, initializeTimezone } = require("../scripts/restore-settings.cjs");
 
 function fixture() {
     return {
@@ -54,4 +55,16 @@ test("TLS patch refuses changed upstream source before writing anything", () => 
     };
     assert.throws(() => vm.runInNewContext(source, context), /changed upstream/);
     assert.equal(writes, 0);
+});
+
+test("timezone initialization keeps the explicit preference before first browser login", async () => {
+    const socket = new EventEmitter();
+    socket.on("initServerTimezone", (timezone) => {
+        assert.equal(timezone, "UTC");
+        socket.emit("info", { serverTimezone: "Europe/London" });
+        queueMicrotask(() => socket.emit("info", { serverTimezone: timezone }));
+    });
+    await initializeTimezone(socket, "UTC");
+    assert.equal(socket.listenerCount("info"), 0);
+    assert.throws(() => initializeTimezone(socket, null), /Invalid source timezone/);
 });

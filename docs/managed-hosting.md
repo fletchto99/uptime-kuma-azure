@@ -283,6 +283,8 @@ helper deliberately does not implement unused features.
    deciding how each is restored or confirming it is obsolete. Unsupported
    inventory, nondefault unsupported status-page fields or non-PNG upload
    logos fail export instead of being silently dropped.
+   The importer regenerates the first-login timezone marker using the source's
+   explicit timezone, so a later browser login cannot silently replace it.
 4. Create a fresh administrator in the restricted destination UI. Import before
    enabling its 2FA, then enroll 2FA separately. Install the helper dependency
    with `npm ci --ignore-scripts`. Set `KUMA_URL`, `KUMA_USERNAME`,
