@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const { test } = require("node:test");
 const vm = require("node:vm");
 
-async function runFixture({ heartbeat = true, corruptField = false, corruptLinks = false } = {}) {
+async function runFixture({ heartbeat = true, corruptField = false, corruptLinks = false, corruptRetryInterval = false } = {}) {
     const state = { monitors: new Map(), settings: {}, errors: [], resumed: [], deleted: [], heartbeatReads: 0 };
     let finish;
     const done = new Promise((resolve) => { finish = resolve; });
@@ -69,8 +69,18 @@ async function runFixture({ heartbeat = true, corruptField = false, corruptLinks
             const monitor = state.monitors.get(id);
             if (sql === "SELECT * FROM monitor WHERE id = ?") {
                 return [[{
-                    ...monitor, active: Number(monitor.active),
+                    name: monitor.name,
+                    type: monitor.type,
+                    url: monitor.url,
+                    method: monitor.method,
+                    interval: monitor.interval,
+                    retry_interval: corruptRetryInterval ? 999 : monitor.retryInterval,
+                    timeout: monitor.timeout,
+                    maxretries: monitor.maxretries,
                     headers: corruptField ? "wrong headers" : monitor.headers,
+                    basic_auth_user: monitor.basic_auth_user,
+                    basic_auth_pass: monitor.basic_auth_pass,
+                    active: Number(monitor.active),
                     accepted_statuscodes_json: JSON.stringify(monitor.accepted_statuscodes),
                     conditions: JSON.stringify(monitor.conditions),
                 }]];
@@ -149,6 +159,17 @@ test("missing UP heartbeat fails after bounded polling and still cleans up the p
     assert.match(result.errors[0].message, /did not persist an UP heartbeat/);
     assert.equal(result.heartbeatReads, 30);
     assert.deepEqual(result.deleted, result.resumed);
+    assert.equal(result.socketClosed, true);
+    assert.equal(result.databaseClosed, true);
+});
+
+test("a wrong persisted retry_interval fails before starting the runtime probe", async () => {
+    const result = await runFixture({ corruptRetryInterval: true });
+    assert.equal(result.exitCode, 1);
+    assert.match(result.errors[0].message, /Field not persisted: retryInterval/);
+    assert.equal(result.errors[0].actual, 999);
+    assert.equal(result.errors[0].expected, 60);
+    assert.deepEqual(result.resumed, []);
     assert.equal(result.socketClosed, true);
     assert.equal(result.databaseClosed, true);
 });

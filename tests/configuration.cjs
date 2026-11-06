@@ -118,6 +118,10 @@ async function main() {
         ssl: { rejectUnauthorized: true, verifyIdentity: true, ca: [fs.readFileSync("/certs/ca.pem")] },
     });
     try {
+        const columns = {
+            retryInterval: "retry_interval",
+            accepted_statuscodes: "accepted_statuscodes_json",
+        };
         for (const [id, configuration] of monitors) {
             const [rows] = await db.execute("SELECT * FROM monitor WHERE id = ?", [id]);
             assert.equal(rows.length, 1);
@@ -125,7 +129,7 @@ async function main() {
                 if (key === "notificationIDList") {
                     continue;
                 }
-                const column = key === "accepted_statuscodes" ? "accepted_statuscodes_json" : key;
+                const column = columns[key] ?? key;
                 const actual = key === "active" ? Boolean(rows[0][column])
                     : ["accepted_statuscodes", "conditions"].includes(key) ? JSON.parse(rows[0][column])
                         : rows[0][column];
