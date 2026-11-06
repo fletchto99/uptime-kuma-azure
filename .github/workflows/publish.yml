@@ -1,11 +1,8 @@
-name: Kuma compatibility
+name: Kuma publish
 
 on:
   push:
-    branches: [main, fletchto99/kuma-managed-hosting]
-    paths: [Dockerfile, .dockerignore, ".github/workflows/**", "tests/**", "scripts/**", "runtime/**", "infra/**", "package*.json"]
-  pull_request:
-    paths: [Dockerfile, .dockerignore, ".github/workflows/**", "tests/**", "scripts/**", "runtime/**", "infra/**", "package*.json"]
+    branches: [main]
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -32,31 +29,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - name: Validate scripts
-        run: |
-          bash -n tests/compatibility.sh
-          node --check tests/mysql-tls.cjs
-          node --check tests/configuration.cjs
-          node --check scripts/patch-database-tls.cjs
-          node --check scripts/restore-settings.cjs
-          node --check scripts/recovery-gate.cjs
-          node --check scripts/release-gate.cjs
-          node --check scripts/deployment-failure.cjs
-          shellcheck tests/compatibility.sh scripts/deploy.sh
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm test
-          python3 -m unittest discover -s tests -p '*_test.py'
-      - name: Compile infrastructure without Azure access
-        run: |
-          az bicep install --version v0.48.1
-          az bicep build --file infra/main.bicep --outfile "$RUNNER_TEMP/main.json"
-      - name: Test patched release with synthetic MySQL and TLS certificates
-        run: bash tests/compatibility.sh
-      - name: Report failed compatibility gate
-        if: failure()
-        run: |
-          echo "::error::Compatibility gate failed. Do not provision or deploy this candidate."
-          echo "Deployment remains blocked. Inspect the synthetic compatibility results above." >> "$GITHUB_STEP_SUMMARY"
+      - uses: ./.github/actions/compatibility
   publish:
     needs: mysql-tls
     if: github.ref == 'refs/heads/main' && github.repository == 'fletchto99/uptime-kuma-azure' && (github.event_name == 'push' || inputs.publish)

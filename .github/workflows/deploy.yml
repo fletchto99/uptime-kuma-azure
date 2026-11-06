@@ -1,7 +1,7 @@
 name: Controlled Kuma update
 on:
   workflow_run:
-    workflows: ["Kuma compatibility"]
+    workflows: ["Kuma publish"]
     branches: [main]
     types: [completed]
   workflow_dispatch:
@@ -47,7 +47,7 @@ jobs:
   validate:
     needs: gate
     if: needs.gate.outputs.operation == 'release'
-    uses: ./.github/workflows/compatibility.yml
+    uses: ./.github/workflows/publish.yml
     with:
       publish: true
     permissions:

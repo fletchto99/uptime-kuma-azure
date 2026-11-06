@@ -13,12 +13,12 @@ async function releaseGate({ env, event, api }) {
     if (env.GITHUB_EVENT_NAME === "workflow_run") {
         const id = event.workflow_run?.id;
         assert.ok(Number.isSafeInteger(id) && id > 0, "Invalid source run");
-        const workflow = await api("actions/workflows/compatibility.yml");
-        assert.equal(workflow.path, WORKFLOW, "Unexpected compatibility workflow");
-        assert.equal(workflow.state, "active", "Compatibility workflow is disabled");
+        const workflow = await api("actions/workflows/publish.yml");
+        assert.equal(workflow.path, WORKFLOW, "Unexpected publishing workflow");
+        assert.equal(workflow.state, "active", "Publishing workflow is disabled");
         const run = await api(`actions/runs/${id}`);
         assert.ok(eligibleMainRelease({ run, mainSha: main.sha, workflowId: workflow.id }),
-            "Only successful current-main push compatibility may release");
+            "Only successful current-main push publication may release");
         const jobs = await api(`actions/runs/${id}/jobs?per_page=100`);
         for (const name of ["mysql-tls", "publish"]) {
             assert.ok(jobs.jobs.some((job) => job.name === name && job.status === "completed" && job.conclusion === "success"),

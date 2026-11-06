@@ -36,9 +36,13 @@ provide multi-instance HA or guarantee immediate recovery.
 Docker-only Dependabot checks weekly on Monday at 10:00 UTC (GitHub may delay
 scheduled work). **The owner reviews and merges Dependabot PRs** after the
 required compatibility CI passes. Nothing automatically approves or merges them.
-After an owner merge, successful current-main push compatibility starts the
-tested, serialized deployment automatically. Major versions require a separate
-manual change.
+Every PR and push to `main` runs the full required `mysql-tls` suite, without
+file filters, including documentation-only changes. Feature-branch and tag
+pushes do not start CI; opening or updating a PR starts one test-only run.
+Publishing and deployment remain main-only: every successful current-main push
+is eligible for the guarded release. Documentation-only main pushes
+intentionally rebuild and can briefly restart Kuma after the existing backup,
+identity and health gates pass. Major versions require a separate manual change.
 An update that changes either patch
 target requires reviewing the source and guards. Remove the patch when upstream
 sets `verifyIdentity: true` for all database connection paths, then rerun the
@@ -63,8 +67,14 @@ See [the activation, recovery and failure contract](docs/managed-hosting.md#cont
   coalescing, minimal-response and recovery unit tests. Production is not
   deliberately crashed or disconnected for these tests.
 
+`Kuma tests` (`test.yml`) contains only the required `mysql-tls` job, with no
+skipped publication job. It and `Kuma publish` (`publish.yml`) use the same
+local compatibility action, so their test suites stay identical.
+Manual `Kuma publish` dispatches remain available for explicit test-only
+branch validation.
+
 Passing main CI publishes a generic credential-free amd64 image to
-GHCR and verifies anonymous pull access. The release reuses the compatibility
+GHCR and verifies anonymous pull access. The release reuses the publishing
 workflow for final validation/publication before its backup-guarded OIDC deploy.
 PRs, feature branches, failed/stale runs and reusable release validations cannot
 trigger another release. Production uses its immutable digest,

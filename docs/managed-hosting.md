@@ -336,22 +336,33 @@ controller. It uses the existing managed services and public image package.
 1. Weekly Docker-only Dependabot checks run Monday at 10:00 UTC; GitHub scheduling
    is best-effort, not an exact maintenance-time guarantee. Major updates are
    ignored by Dependabot and require a separate manual change.
-2. PR CI has no Azure access. It checks the readable tag/index digest, exact
-   upstream TLS-patch source guards, actual app/MySQL/TLS cases, configuration
-   migration, policy tests, shell lint and Bicep.
+2. Every PR and push to `main` runs the full required `mysql-tls` suite,
+   including documentation-only changes, with no CI file filters.
+   Feature-branch and tag pushes do not start CI; PRs get one test-only run
+   from `Kuma tests` (`test.yml`), with no publication job. It and
+   `Kuma publish` (`publish.yml`) share `.github/actions/compatibility`.
+   Manual `Kuma publish` dispatches remain available for test-only branch
+   validation.
+   Test jobs have no Azure access. They check the readable tag/index digest,
+   exact upstream TLS-patch source guards, actual app/MySQL/TLS cases,
+   configuration migration, policy tests, shell lint and Bicep.
 3. **The owner reviews and merges the PR** after required CI passes. There is
    no bot approval, automatic merge workflow, merge queue or privileged merger
    script. Native strict required checks remain the merge gate. Major changes
    and TLS/source-guard drift require human review and any necessary code fix;
    never refresh expected source hashes blindly.
-4. That merge's push to main runs compatibility and publishes a tested image.
-   `deploy.yml` listens for successful main compatibility completion. Its
+4. Every successful current-main push publishes a tested image and is eligible
+   for the guarded release, including documentation-only main pushes. This
+   intentionally permits a rebuild and brief serialized restart for docs-only
+   changes; no backup, provenance, current-SHA, OIDC or health gate is bypassed.
+   PRs test without publishing or deploying.
+   `deploy.yml` listens for successful main `Kuma publish` completion. Its
    read-only gate checks the actual workflow ID/path, same repository, push
    event, main branch, completed test/publication jobs and exact current SHA.
    Only trusted main is checked out. PRs, forks, feature branches, failed runs
-   and stale commits cannot deploy. Reusable compatibility calls within a
+   and stale commits cannot deploy. Reusable publishing calls within a
    release are not push runs and cannot recursively start another release.
-5. A release re-runs trusted main CI through the reusable compatibility workflow,
+5. A release re-runs trusted main CI through the reusable publishing workflow,
    publishes the image and passes its exact digest to the deployment job.
    Main is checked again before changes; a stale request fails before stopping
    the app. Feature/PR builds cannot deploy or obtain production secrets.
@@ -364,10 +375,15 @@ controller. It uses the existing managed services and public image package.
 
 Create the `production` environment with only the `main` branch allowed.
 Unattended operation cannot require a human approval on every deployment; the
-user approves the policy before activation instead. Main requires the trusted
-`mysql-tls` GitHub Actions check with strict up-to-date checks, no force pushes
-and no deletion. No administrator bypass or force merge is used. The owner
-decides which green PRs to merge; source-guard failures still block CI.
+user approves the policy before activation instead. The active
+[main branch ruleset](https://github.com/fletchto99/uptime-kuma-azure/rules/26672593)
+targets `refs/heads/main`: require PRs with zero mandatory approvals, resolved
+review conversations, and the `mysql-tls` check pinned to GitHub Actions
+integration `15368` with strict up-to-date checks. It blocks deletion and
+non-fast-forward updates and has no bypass actors, including administrators.
+These protections are supplied by the ruleset, not a separate classic branch
+protection configuration. The owner decides which green PRs to merge;
+source-guard failures still block CI.
 The automatic release gate needs only contents/actions read permissions, not
 contents write, pull-request approval or workflow-dispatch permissions.
 
