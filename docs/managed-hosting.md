@@ -366,10 +366,14 @@ and no deletion. No administrator bypass or force merge is used. Major and
 source-guard changes remain manual because the merger refuses them, not because
 it invents a passing review.
 
-Use a free user-assigned managed identity with a federated credential for
-`repo:fletchto99/uptime-kuma-azure:environment:production`, issuer
-`https://token.actions.githubusercontent.com`, audience
+Use a free user-assigned managed identity with a federated credential matching
+the **actual issued** subject for this repository's `production` environment,
+issuer `https://token.actions.githubusercontent.com`, audience
 `api://AzureADTokenExchange`. Do not attach the identity to Kuma.
+GitHub can include stable owner/repository IDs in the subject, for example
+`repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:production`; don't assume the older
+name-only subject. Verify those IDs against the repository metadata before
+configuring the exact federation.
 Assign the custom updater role only on the existing app, its plan and its
 MySQL server. Required actions are app read/start/stop, sitecontainer read/write,
 slot/snapshot read, plan read, database metadata read and native backup read.
@@ -379,6 +383,7 @@ or permission to create a restored server is needed.
 Environment Secrets contain these **nonsecret identifiers**, masked by GitHub:
 `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
 `AZURE_RESOURCE_GROUP`, `AZURE_WEBAPP_NAME`, `AZURE_MYSQL_SERVER_NAME`.
+`AZURE_FEDERATED_SUBJECT` holds the nonsecret subject for native log masking.
 No GitHub PAT, app private key or Azure client secret is introduced.
 
 After hosted CI passes and main integration is approved, dispatch

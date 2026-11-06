@@ -64,6 +64,7 @@ jobs:
       AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
       AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}
       AZURE_MYSQL_SERVER_NAME: ${{ secrets.AZURE_MYSQL_SERVER_NAME }}
+      AZURE_FEDERATED_SUBJECT: ${{ secrets.AZURE_FEDERATED_SUBJECT }}
       GH_TOKEN: ${{ github.token }}
       UPDATE_OPERATION: ${{ needs.gate.outputs.operation }}
       EXPECTED_SHA: ${{ inputs.expected_sha }}
@@ -78,6 +79,7 @@ jobs:
           test -n "$AZURE_RESOURCE_GROUP" && test -n "$AZURE_WEBAPP_NAME" && test -n "$AZURE_MYSQL_SERVER_NAME"
           echo "DEPLOYMENT_FAILURE_FILE=$RUNNER_TEMP/deployment-failure.json" >> "$GITHUB_ENV"
       - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac # v2
+        id: azure_login
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -103,5 +105,5 @@ jobs:
         if: failure()
         run: node scripts/deployment-failure.cjs
       - name: Close the Azure login
-        if: always()
+        if: always() && steps.azure_login.outcome == 'success'
         run: az logout
