@@ -1,6 +1,6 @@
 **
 !Dockerfile
 !scripts/
-!scripts/patch-database-tls.cjs
+!scripts/patch-managed-hosting.cjs
 !runtime/
 !runtime/health.cjs
