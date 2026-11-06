@@ -10,8 +10,8 @@ guards without Azure credentials. A separate manual OIDC update workflow is
 disabled until deliberately enabled, restricted to `main`, and requires backup
 confirmation and a protected environment.
 
-The next intended deployment places **both services in West US 2**, in a
-West US 2 resource group. Paid provisioning requires a successful full preflight
+The selected deployment places **App Service in West US 3 and MySQL in West US 2**,
+in a West US 2 resource group. Paid provisioning requires a successful full preflight
 and explicit release; earlier regional proposals are historical, not active
 deployment instructions.
 
@@ -66,10 +66,12 @@ even when the initial credentials come from a secret reference.
 
 ## Current spending boundary
 
-The West US 2 retail estimate is approximately CAD38.07/month
-for B1 hosting, B1ms MySQL, and the 20 GiB minimum database storage at 730 hours.
-Both services target West US 2; cross-region app-to-database traffic is not part
-of this topology. Internet egress and other applicable usage remain additional.
+The selected split-region retail estimate is approximately CAD38.07/month
+for West US 3 B1 hosting, West US 2 B1ms MySQL, and the 20 GiB minimum database
+storage at 730 hours. Cross-region outgoing traffic is currently CAD0.0281/GB
+in each direction, in addition to internet egress and other applicable usage.
+Database latency and traffic volume are unmeasured; HTTP probes originate from
+West US 3.
 CAD50/month is a planning allowance, **not a spending cap**. Taxes, backup
 overage, I/O, network egress, asset backups, optional secret-store operations,
 and temporary parallel resources can add costs. The web plan waits for successful

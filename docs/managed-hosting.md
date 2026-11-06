@@ -7,9 +7,9 @@ Server B1ms, using MySQL 8.4 LTS. The approved migration scope is configuration
 only, not historical heartbeats or uptime records. No alternative platform,
 SQLite synchronization service, or self-managed database is proposed here.
 
-**Current target: West US 2 for the resource group, app and database.** Paid
-provisioning requires successful full Provider preflight and explicit release.
-Previous Central US, split-region and East US 2 proposals are inactive; retain
+**Current target: West US 3 for App Service, West US 2 for MySQL and the resource
+group.** Paid provisioning requires successful full Provider preflight and explicit
+release. Previous Central US, West Central US, all-West US 2 and East US 2 proposals are inactive; retain
 their private failure evidence and encrypted credentials as history, not as the
 next deployment's parameter inputs. A Portal region/version selection alone
 does not prove that the small SKU can be allocated.
@@ -91,11 +91,11 @@ Dockerfile patch steps and script, and pass the same negative tests.
 
 ## Resources and spending decision
 
-West US 2 CAD retail estimates, at 730 hours/month, before taxes:
+Selected split-region CAD retail estimates, at 730 hours/month, before taxes:
 
 | Component | Assumption | Estimated CAD/month |
 | --- | --- | ---: |
-| Linux App Service plan | West US 2 B1, one worker, CAD0.023864/hour | 17.42072 |
+| Linux App Service plan | West US 3 B1, one worker, CAD0.023864/hour | 17.42072 |
 | MySQL Flexible Server compute | West US 2 Burstable B1ms, CAD0.023864/hour | 17.42072 |
 | MySQL data storage | West US 2 20 GiB minimum, CAD0.161431/GiB-month | 3.22862 |
 | Core subtotal | No HA or replicas | **38.07006** |
@@ -124,11 +124,12 @@ instance, but the following variable costs must be included in the live estimate
 - **Secrets:** encrypted App Service settings need no dedicated secret service.
   If a Key Vault reference is selected, price its operations and any retention
   requirements separately; do not claim Key Vault is free.
-- **Traffic:** both services target West US 2, so cross-region
-  app-to-database traffic is not part of this topology. Internet egress and
-  other applicable service network charges remain additional. Actual traffic
-  volume and latency are unmeasured; no latency improvement or blanket free
-  usage allowance is assumed.
+- **Traffic:** the West US 3 app connects to the West US 2 database over
+  certificate- and hostname-verified TLS. Cross-region outgoing traffic is
+  currently CAD0.0281/GB in each direction; count requests and responses
+  separately, not the same transfer twice. Incoming traffic is free. Internet
+  egress and other applicable network charges remain additional. Actual volume
+  and database latency are unmeasured; HTTP probes originate from West US 3.
 - **Recovery and migration overlap:** point-in-time recovery creates a new
   billable MySQL server. Any still-provisioned old disks, public IPs, or running
   compute are separate charges; don't assume that stopping/deallocating compute
@@ -218,15 +219,15 @@ real passwords only for the approved creation with output disabled. Do not
 enable debug logging, terminal transcripts, or public output capture.
 
 ```powershell
-az deployment group what-if --resource-group <approved-group> --template-file .\infra\main.bicep --validation-level Provider --parameters '@C:\Private\kuma\preview.parameters.json' appLocation=westus2 databaseLocation=westus2
+az deployment group what-if --resource-group <approved-group> --template-file .\infra\main.bicep --validation-level Provider --parameters '@C:\Private\kuma\preview.parameters.json' appLocation=westus3 databaseLocation=westus2
 # Only after reviewing the preview and receiving live-creation approval:
-az deployment group create --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json' appLocation=westus2 databaseLocation=westus2 --output none
+az deployment group create --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json' appLocation=westus3 databaseLocation=westus2 --output none
 ```
 
 Required parameters: `name`, `image` (the anonymously pullable GHCR digest),
 `operatorIPv4` (one real public IPv4, never `0.0.0.0`),
 `databaseAdministrator`, `databaseAdministratorPassword`, `databasePassword`.
-`appLocation` and `databaseLocation` both default to `westus2`. The examples
+`appLocation` defaults to `westus3`; `databaseLocation` defaults to `westus2`. The examples
 also explicitly override any stale region values from private parameter files.
 A resource group's metadata location does not override either resource location.
 Use the West US 2 pilot resource group and fresh globally available names;
