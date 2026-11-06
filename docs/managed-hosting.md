@@ -378,10 +378,11 @@ GitHub can include stable owner/repository IDs in the subject, for example
 name-only subject. Verify those IDs against the repository metadata before
 configuring the exact federation.
 Assign the custom updater role only on the existing app, its plan and its
-MySQL server. Required actions are app read/start/stop, nonsecret web-configuration
-read (`Microsoft.Web/sites/config/read`, also needed by `az webapp show`),
-sitecontainer read/write, slot/snapshot read, plan read, database metadata read
-and native backup read.
+MySQL server. Required actions are app read/start/stop, sitecontainer read/write,
+slot/snapshot read, plan read, database metadata read and native backup read.
+Deployment uses exact ARM REST operations: convenience commands such as
+`az webapp show` can additionally request configuration and publishing credentials.
+Do not grant those extra permissions to make a convenience command succeed.
 No subscription Contributor, database data-plane rights, credential-list action
 or permission to create a restored server is needed.
 
