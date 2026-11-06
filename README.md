@@ -24,7 +24,12 @@ The Dockerfile pins the official readable release tag and multi-platform index.
 It applies a narrow, user-approved TLS hostname-verification patch: stock 2.5.9
 trusts the CA but does not check the database hostname. Full-file SHA256 guards
 make upstream source changes fail visibly. The app is not rebuilt or forked.
-Only that public patch enters the build context.
+Only the public patch and small managed-health module enter the build context.
+The source-checked `/healthz` route verifies the application and database with a
+bounded, coalesced pooled query and returns only direct 200/503 status JSON.
+App Service Health Check and conservative Linux Auto-Heal use it; SSH access is
+explicitly disabled, while SCM remains operator-only. These controls do not
+provide multi-instance HA or guarantee immediate recovery.
 
 Docker-only Dependabot checks weekly on Monday at 10:00 UTC (GitHub may delay
 scheduled work). Eligible patch/minor/digest-only updates can be merged by the
@@ -50,6 +55,9 @@ See [the activation, recovery and failure contract](docs/managed-hosting.md#cont
 - A stopped synthetic SQLite database exported privately and restored through
   Kuma's authenticated UI API into its own MySQL schema, with remapped IDs,
   credentials, status-page order and settings checked.
+- Actual healthy/DB-disconnected/concurrent health requests, plus timeout,
+  coalescing, minimal-response and recovery unit tests. Production is not
+  deliberately crashed or disconnected for these tests.
 
 Passing main CI publishes a generic credential-free amd64 image to
 GHCR and verifies anonymous pull access. Production uses its immutable digest,

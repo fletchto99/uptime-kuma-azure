@@ -18,9 +18,11 @@ The stock Kuma 2.5.9 gate found missing TLS hostname verification. The user
 approved the smallest source-checked fix: `verifyIdentity: true` at the two
 runtime connection sites and the setup connection. Existing CA handling and
 `rejectUnauthorized: true` are unchanged. `scripts/patch-database-tls.cjs`
-checks both complete upstream source hashes and expected match counts before
+checks complete upstream source hashes and expected match counts before
 writing anything; upstream changes fail the build rather than silently skipping
-the fix.
+the fix. It also checks `server/server.js` before inserting the single managed
+health route. A changed upstream server requires review rather than a blind hash
+refresh.
 
 `infra/main.bicep` compiles offline. Provisioning is separate from the controlled
 update workflow; there is no registry webhook or scheduled infrastructure deploy.
@@ -49,15 +51,16 @@ Azure resources or private data:
 | Update ordering, failure-stop behavior and singleton/approval guards | Pass |
 | Bicep compilation and anonymous public image pull | Pass |
 
-Approved-pilot image candidate, published for Linux amd64 and independently
-verified anonymously pullable:
+Historical initial pilot image (TLS patch only; **not** suitable for the new
+`/healthz` configuration):
 
 ```text
 ghcr.io/fletchto99/uptime-kuma-azure@sha256:a5b870e1f90016d9bd3ac78600e474b5320a4e8b2349a3fdb29827d59ed0b210
 ```
 
-Readable tag: `2.5.9-tls-d6c429e028a2`. Deployment must use the digest above, not
-the mutable tag. Subsequent tested images are recorded in CI's job summary.
+Historical readable tag: `2.5.9-tls-d6c429e028a2`. Use the new health-enabled
+image digest returned by trusted CI, not this old candidate or a mutable tag.
+Tested images are recorded in CI's job summary and the private runtime handoff.
 The [original stock-release diagnosis](https://github.com/fletchto99/uptime-kuma-azure/actions/runs/41982440614)
 remains available: unmodified 2.5.9 accepted a trusted certificate for the wrong
 hostname, which is why the narrow patch exists.
@@ -167,6 +170,10 @@ creation. The intended bounded setup is:
    routing. Startup sets Node's `process.umask(0o077)` before loading the stock
    server, without shell quoting that App Service's startup parser can split.
    New runtime secret files therefore retain the restrictive process umask.
+   SSH is explicitly disabled; remote debugging and FTP/basic publishing remain
+   disabled. The bundled Bicep schema predates the documented `sshEnabled`
+   field, so only that field has a targeted schema-warning suppression; its live
+   provider behavior must be verified. The rest of the app remains type-checked.
    The plan explicitly depends on successful MySQL database provisioning, so a
    failed database create cannot allocate an otherwise unused paid web worker.
 2. One MySQL 8.4 B1ms server, 20 GiB starting storage, local backups, seven-day
@@ -422,13 +429,63 @@ the owner must enable appropriate GitHub notifications. Email receipt is not
 verified or guaranteed.
 
 The script rejects multiple workers and slots, observes `Stopped`, changes the
-exact image, starts once and checks its own HTTP startup-readiness response.
+exact image, starts once and checks the direct `/healthz` response.
 It does not poll monitored targets or treat a target DOWN as a deployment failure.
-This one-time response check is **not** continuous database-aware liveness,
-App Service Health Check, or automatic runtime recovery.
+That one-time rollout check is separate from the continuous controls below.
 Initial operator-only main ingress blocks hosted readiness probes. After the
 explicit public-access decision, probes use the public main hostname while
 SCM remains operator-only; this workflow is not for initial setup.
+
+## Application health, Linux recovery and SSH
+
+Released Kuma's `/setup-database-info` returns setup flags; it is not an ongoing
+database probe. The managed image instead registers `/healthz` after database
+initialization. It executes a tiny `SELECT 1` through Kuma's existing Knex pool,
+uses a one-second query timeout (with supported MySQL cancellation), and gives
+HTTP requests a 1.5-second deadline. Concurrent requests share one check and
+results are cached for two seconds. If pool acquisition or query completion
+outlives the HTTP deadline, no additional health task is queued until it settles.
+This bounds unauthenticated health-query pressure.
+
+Responses are only `{"status":"ok"}` with 200 or `{"status":"unavailable"}` with
+503 and `Cache-Control: no-store`. No internal error, hostname, credentials,
+monitor data or user information is returned. Failures/recovery are logged as
+generic state changes. External target DOWN states and paused monitors do not
+make this application/database health check fail. The container healthcheck and
+deployment gate also use this route.
+
+App Service is configured with `/healthz` and five consecutive failed
+one-minute probes as its unhealthy threshold. With one worker, Azure does not
+remove the only worker from service; replacement follows about an hour of
+continuous unhealthy checks, subject to the platform's one-per-hour and
+three-per-day limits. This is not instant failover or HA.
+
+Linux Auto-Heal uses the supported `Recycle` action for `/healthz`: five
+500-599 responses within ten minutes, or three requests taking over thirty
+seconds within ten minutes. `minProcessExecutionTime=00:30:00` supplies startup
+grace and a minimum runtime between recycle actions. There is no request-count
+periodic restart, memory-dump service or extra worker. Internal Health Check
+requests aren't included in normal web-server logs; the documented controls do
+not establish that those requests count toward Auto-Heal triggers. Do not infer
+a guaranteed fast recycle from the probe cadence. Production crash/DB failure
+injection is not part of verification; failure cases are tested synthetically.
+
+The live rollout must stop the app, update the health-enabled immutable image
+and only the health/SSH configuration, then start once. Do not leave the health
+path enabled on the older image that lacks it. No
+`CONTAINER_AVAILABILITY_CHECK_MODE=Repair` Windows setting is used.
+
+`sshEnabled=false` disables the App Service container SSH/browser-terminal
+control. It is not a replacement for SCM access restrictions and does not
+disable all authenticated ARM/Kudu management APIs. The update identity does
+not use SSH. Only web ingress is public; login remains protected by Kuma
+authentication/2FA. HTTPS-only upgrades ordinary HTTP requests, but no HSTS or
+browser preload claim is made unless separately configured and verified.
+
+References:
+[Linux Auto-Heal](https://azure.github.io/AppService/2021/04/21/Announcing-Autoheal-for-Azure-App-Service-Linux.html),
+[Health Check semantics](https://learn.microsoft.com/azure/app-service/monitor-instances-health-check),
+[SSH access control](https://learn.microsoft.com/azure/app-service/configure-linux-open-ssh-session#control-ssh-access).
 
 ## Configuration-only migration and acceptance
 
