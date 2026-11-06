@@ -1,7 +1,7 @@
 targetScope = 'resourceGroup'
 
-param appLocation string = 'centralus'
-param databaseLocation string = 'centralus'
+param appLocation string = 'westus2'
+param databaseLocation string = 'westus2'
 @minLength(3)
 @maxLength(40)
 param name string

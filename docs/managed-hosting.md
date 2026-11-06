@@ -7,10 +7,12 @@ Server B1ms, using MySQL 8.4 LTS. The approved migration scope is configuration
 only, not historical heartbeats or uptime records. No alternative platform,
 SQLite synchronization service, or self-managed database is proposed here.
 
-**Current target: Central US for both the app and database.** Provisioning is
-paused pending Azure support. Previous split-region and East US 2 proposals
-are inactive; retain their private failure evidence and encrypted credentials
-as history, not as the next deployment's parameter inputs.
+**Current target: West US 2 for the resource group, app and database.** Paid
+provisioning requires successful full Provider preflight and explicit release.
+Previous Central US, split-region and East US 2 proposals are inactive; retain
+their private failure evidence and encrypted credentials as history, not as the
+next deployment's parameter inputs. A Portal region/version selection alone
+does not prove that the small SKU can be allocated.
 
 The stock Kuma 2.5.9 gate found missing TLS hostname verification. The user
 approved the smallest source-checked fix: `verifyIdentity: true` at the two
@@ -89,14 +91,14 @@ Dockerfile patch steps and script, and pass the same negative tests.
 
 ## Resources and spending decision
 
-Central US CAD retail estimates, at 730 hours/month, before taxes:
+West US 2 CAD retail estimates, at 730 hours/month, before taxes:
 
 | Component | Assumption | Estimated CAD/month |
 | --- | --- | ---: |
-| Linux App Service plan | Central US B1, one worker, CAD0.025267/hour | 18.44491 |
-| MySQL Flexible Server compute | Central US Burstable B1ms, CAD0.026966/hour | 19.68518 |
-| MySQL data storage | Central US 20 GiB minimum, CAD0.182487/GiB-month | 3.64974 |
-| Core subtotal | No HA or replicas | **41.77983** |
+| Linux App Service plan | West US 2 B1, one worker, CAD0.023864/hour | 17.42072 |
+| MySQL Flexible Server compute | West US 2 Burstable B1ms, CAD0.023864/hour | 17.42072 |
+| MySQL data storage | West US 2 20 GiB minimum, CAD0.161431/GiB-month | 3.22862 |
+| Core subtotal | No HA or replicas | **38.07006** |
 
 CAD50/month is a planning allowance, not a quotation or hard cap. Credits and
 account-specific pricing must be checked privately by the owner. The resource
@@ -122,7 +124,7 @@ instance, but the following variable costs must be included in the live estimate
 - **Secrets:** encrypted App Service settings need no dedicated secret service.
   If a Key Vault reference is selected, price its operations and any retention
   requirements separately; do not claim Key Vault is free.
-- **Traffic:** both services target Central US, so cross-region
+- **Traffic:** both services target West US 2, so cross-region
   app-to-database traffic is not part of this topology. Internet egress and
   other applicable service network charges remain additional. Actual traffic
   volume and latency are unmeasured; no latency improvement or blanket free
@@ -204,9 +206,10 @@ creation. The intended bounded setup is:
    failure, and the script stops a failed replacement. Confirm GitHub Actions
    failure-email delivery (and an independent alert if needed) before activation.
 
-The commands below are for use only after the support blocker is resolved and
-deployment is explicitly released again. Do not run them as part of the reset.
-After that approval, use a **private operator terminal**, not public Actions,
+Use a **private operator terminal**, not public Actions, for the explicitly
+authorized Provider preflight. Run the creation command only after preflight
+succeeds and paid deployment is explicitly released; a configuration reset is
+not permission to provision. Use that private terminal
 to provide secure parameters and run the preview. Keep the parameters file
 outside the repository and restrict its filesystem ACL. It contains both the
 administrator and the database-scoped runtime password.
@@ -215,19 +218,21 @@ real passwords only for the approved creation with output disabled. Do not
 enable debug logging, terminal transcripts, or public output capture.
 
 ```powershell
-az deployment group what-if --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\preview.parameters.json' appLocation=centralus databaseLocation=centralus
+az deployment group what-if --resource-group <approved-group> --template-file .\infra\main.bicep --validation-level Provider --parameters '@C:\Private\kuma\preview.parameters.json' appLocation=westus2 databaseLocation=westus2
 # Only after reviewing the preview and receiving live-creation approval:
-az deployment group create --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json' appLocation=centralus databaseLocation=centralus --output none
+az deployment group create --resource-group <approved-group> --template-file .\infra\main.bicep --parameters '@C:\Private\kuma\deployment.parameters.json' appLocation=westus2 databaseLocation=westus2 --output none
 ```
 
 Required parameters: `name`, `image` (the anonymously pullable GHCR digest),
 `operatorIPv4` (one real public IPv4, never `0.0.0.0`),
 `databaseAdministrator`, `databaseAdministratorPassword`, `databasePassword`.
-`appLocation` and `databaseLocation` both default to `centralus`. The examples
+`appLocation` and `databaseLocation` both default to `westus2`. The examples
 also explicitly override any stale region values from private parameter files.
 A resource group's metadata location does not override either resource location.
-Choose fresh globally available names only after the support issue is resolved;
-do not reuse old proposal parameters or assume retained credentials are active.
+Use the West US 2 pilot resource group and fresh globally available names;
+do not overwrite manually created resources, reuse old proposal parameters or
+assume retained credentials are active. Never adopt the Portal's larger
+General Purpose workload default in place of the approved Burstable B1ms.
 Obtain actual subscription/resource names only in the private operator context.
 Confirm B1/B1ms availability, 20 GiB minimum,
 included I/O allowance, default CA trust, billing/credit applicability and budget
