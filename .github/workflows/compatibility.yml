@@ -1,9 +1,7 @@
 name: Kuma compatibility
 
 on:
-  push:
-    branches: [main, fletchto99/kuma-managed-hosting]
-    paths: [Dockerfile, .dockerignore, ".github/workflows/**", "tests/**", "scripts/**", "runtime/**", "infra/**", "package*.json"]
+  push: {}
   pull_request: {}
   workflow_dispatch:
   workflow_call:

@@ -336,9 +336,9 @@ controller. It uses the existing managed services and public image package.
 1. Weekly Docker-only Dependabot checks run Monday at 10:00 UTC; GitHub scheduling
    is best-effort, not an exact maintenance-time guarantee. Major updates are
    ignored by Dependabot and require a separate manual change.
-2. PR CI runs the full required `mysql-tls` check for every PR, including
-   documentation-only changes; it has no workflow-level PR path filter or Azure
-   access. It checks the readable tag/index digest, exact
+2. Every push and PR runs the full required `mysql-tls` suite, including
+   documentation-only changes, with no CI file or branch filters. Test jobs
+   have no Azure access. They check the readable tag/index digest, exact
    upstream TLS-patch source guards, actual app/MySQL/TLS cases, configuration
    migration, policy tests, shell lint and Bicep.
 3. **The owner reviews and merges the PR** after required CI passes. There is
@@ -346,9 +346,11 @@ controller. It uses the existing managed services and public image package.
    script. Native strict required checks remain the merge gate. Major changes
    and TLS/source-guard drift require human review and any necessary code fix;
    never refresh expected source hashes blindly.
-4. A merge matching the existing main-push path filters runs compatibility and
-   publishes a tested image. Documentation-only merges do not publish or deploy;
-   the broader PR coverage does not broaden main-push deployment triggers.
+4. Every successful current-main push publishes a tested image and is eligible
+   for the guarded release, including documentation-only main pushes. This
+   intentionally permits a rebuild and brief serialized restart for docs-only
+   changes; no backup, provenance, current-SHA, OIDC or health gate is bypassed.
+   Other branch/tag pushes and PRs test without publishing or deploying.
    `deploy.yml` listens for successful main compatibility completion. Its
    read-only gate checks the actual workflow ID/path, same repository, push
    event, main branch, completed test/publication jobs and exact current SHA.

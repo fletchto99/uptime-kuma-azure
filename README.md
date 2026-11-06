@@ -36,11 +36,13 @@ provide multi-instance HA or guarantee immediate recovery.
 Docker-only Dependabot checks weekly on Monday at 10:00 UTC (GitHub may delay
 scheduled work). **The owner reviews and merges Dependabot PRs** after the
 required compatibility CI passes. Nothing automatically approves or merges them.
-Every PR runs the full required `mysql-tls` suite, including documentation-only
-changes. After an owner merge that matches the existing main-push path filters,
-successful current-main compatibility starts the tested, serialized deployment
-automatically. Documentation-only merges do not publish or deploy. Major
-versions require a separate manual change.
+Every push and PR runs the full required `mysql-tls` suite, without file or
+branch filters, including documentation-only changes. Publishing and deployment
+remain main-only: every successful current-main push is eligible for the
+guarded release. Documentation-only main pushes intentionally rebuild and can
+briefly restart Kuma after the existing backup, identity and health gates pass.
+Other branch/tag pushes and PRs only run tests. Major versions require a
+separate manual change.
 An update that changes either patch
 target requires reviewing the source and guards. Remove the patch when upstream
 sets `verifyIdentity: true` for all database connection paths, then rerun the

@@ -7,12 +7,13 @@ const { test } = require("node:test");
 const workflow = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "compatibility.yml"), "utf8")
     .replaceAll("\r\n", "\n");
 
-test("every PR, including documentation-only changes, triggers compatibility", () => {
+test("every push and PR, including documentation-only changes, triggers compatibility", () => {
+    assert.match(workflow, /^  push: \{\}$/m);
     assert.match(workflow, /^  pull_request: \{\}$/m);
     assert.doesNotMatch(workflow, /^  pull_request_target:/m);
 });
 
-test("PRs retain the exact required mysql-tls check and full unconditionally scheduled suite", () => {
+test("CI retains the exact required mysql-tls check and full unconditionally scheduled suite", () => {
     const job = workflow.match(/^  mysql-tls:\n([\s\S]*?)(?=^  publish:)/m)?.[1];
     assert.ok(job, "The required mysql-tls job must exist");
     assert.doesNotMatch(job, /^    (?:if|name|permissions|environment):/m);
@@ -29,15 +30,11 @@ test("PRs retain the exact required mysql-tls check and full unconditionally sch
     }
 });
 
-test("main push filtering, publication permissions and reusable workflow semantics remain unchanged", () => {
-    const push = workflow.match(/^  push:\n((?:^    .*\n)+)/m)?.[1];
-    assert.equal(push, [
-        "    branches: [main, fletchto99/kuma-managed-hosting]",
-        '    paths: [Dockerfile, .dockerignore, ".github/workflows/**", "tests/**", "scripts/**", "runtime/**", "infra/**", "package*.json"]',
-        "",
-    ].join("\n"));
+test("publication stays main-only with unchanged permissions and reusable workflow semantics", () => {
+    assert.match(workflow, /^  workflow_dispatch:$/m);
     assert.match(workflow, /^  workflow_call:\n    inputs:\n      publish:\n        type: boolean\n        default: false$/m);
     assert.match(workflow, /value: \$\{\{ jobs\.publish\.outputs\.image \}\}/);
+    assert.match(workflow, /^  publish:\n    needs: mysql-tls$/m);
     assert.ok(workflow.includes("if: github.ref == 'refs/heads/main' && github.repository == 'fletchto99/uptime-kuma-azure' && (github.event_name == 'push' || inputs.publish)"));
     assert.match(workflow, /permissions:\n      contents: read\n      packages: write/);
 });
