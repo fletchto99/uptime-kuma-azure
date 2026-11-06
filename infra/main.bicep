@@ -7,8 +7,10 @@ param databaseLocation string = 'westus2'
 param name string
 @description('Approved immutable public image, ghcr.io/...@sha256:...; never latest.')
 param image string
-@description('Operator public IPv4 for initial setup only. Never 0.0.0.0.')
+@description('Operator IPv4 for initial main-site setup, SCM and temporary DB administration. Never 0.0.0.0.')
 param operatorIPv4 string
+@description('Open only the main site after explicit approval. SCM always remains operator-only.')
+param publicAccess bool = false
 param databaseAdministrator string
 @secure()
 param databaseAdministratorPassword string
@@ -105,8 +107,8 @@ resource app 'Microsoft.Web/sites@2024-11-01' = {
       minTlsVersion: '1.2'
       scmMinTlsVersion: '1.2'
       ftpsState: 'Disabled'
-      ipSecurityRestrictionsDefaultAction: 'Deny'
-      ipSecurityRestrictions: [
+      ipSecurityRestrictionsDefaultAction: publicAccess ? 'Allow' : 'Deny'
+      ipSecurityRestrictions: publicAccess ? [] : [
         {
           name: 'initial-operator-only'
           action: 'Allow'
@@ -114,7 +116,16 @@ resource app 'Microsoft.Web/sites@2024-11-01' = {
           ipAddress: '${operatorIPv4}/32'
         }
       ]
-      scmIpSecurityRestrictionsUseMain: true
+      scmIpSecurityRestrictionsUseMain: false
+      scmIpSecurityRestrictionsDefaultAction: 'Deny'
+      scmIpSecurityRestrictions: [
+        {
+          name: 'operator-only-scm'
+          action: 'Allow'
+          priority: 100
+          ipAddress: '${operatorIPv4}/32'
+        }
+      ]
       appSettings: [
         { name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE', value: 'true' }
         { name: 'DATA_DIR', value: '/home/kuma/' }

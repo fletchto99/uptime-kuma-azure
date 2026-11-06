@@ -10,6 +10,11 @@ guards without Azure credentials. A separate manual OIDC update workflow is
 disabled until deliberately enabled, restricted to `main`, and requires backup
 confirmation and a protected environment.
 
+`publicAccess` defaults to `false` for initial setup. After explicit approval,
+set it to `true` in the environment's private parameters to publish the main
+site without changing Kuma authentication. SCM keeps its own operator-only
+allow rule and deny default; it never inherits public main-site access.
+
 The selected deployment places **App Service in West US 3 and MySQL in West US 2**,
 in a West US 2 resource group. Paid provisioning requires a successful full preflight
 and explicit release; earlier regional proposals are historical, not active

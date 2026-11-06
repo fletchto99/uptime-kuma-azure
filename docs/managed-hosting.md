@@ -229,6 +229,11 @@ az deployment group create --resource-group <approved-group> --template-file .\i
 Required parameters: `name`, `image` (the anonymously pullable GHCR digest),
 `operatorIPv4` (one real public IPv4, never `0.0.0.0`),
 `databaseAdministrator`, `databaseAdministratorPassword`, `databasePassword`.
+`publicAccess` defaults to `false` for first setup. For an environment whose
+main site has already been approved for public access, retain
+`publicAccess: true` in its private deployment parameters; otherwise a later
+full IaC deployment intentionally reapplies the safe initial restriction.
+The image-update workflow doesn't redeploy these access settings.
 `appLocation` defaults to `westus3`; `databaseLocation` defaults to `westus2`. The examples
 also explicitly override any stale region values from private parameter files.
 A resource group's metadata location does not override either resource location.
@@ -241,8 +246,10 @@ Confirm B1/B1ms availability, 20 GiB minimum,
 included I/O allowance, default CA trust, billing/credit applicability and budget
 notifications before creation. A budget alert is not a hard cap.
 
-Initial app ingress is restricted to that operator IP, including SCM, to avoid
-exposing fresh-account setup. The DB allows the app's possible outbound IPs and
+Initial main-site ingress is restricted to that operator IP to avoid exposing
+fresh-account setup. SCM has its own explicit operator allow rule and deny
+default, with `scmIpSecurityRestrictionsUseMain: false` in both initial and
+public modes. The DB allows the app's possible outbound IPs and
 one temporary operator IP. Create the scoped user using the privately completed
 `infra/database-user.sql` over a MySQL client connection with
 `--ssl-mode=VERIFY_IDENTITY`, the server's canonical
@@ -250,10 +257,15 @@ one temporary operator IP. Create the scoped user using the privately completed
 Never use the administrator as the runtime user or enable insecure TLS to get
 past a startup failure.
 
-After setup/import and private verification, the parent can remove the app's
-initial ingress restriction to publish the intended status service and remove
-the temporary DB operator firewall rule. Preserve the app egress rules. Any
-future plan/egress change requires checking those rules again.
+After setup/import, verify that unauthenticated protected Kuma API calls are
+denied, then obtain explicit approval before setting `publicAccess: true`.
+This changes only the main-site policy to allow public traffic; it does not
+disable Kuma authentication, open SCM, or modify MySQL firewall rules.
+Recommend 2FA, but don't silently enable it or change the user's password.
+Keep the approved public setting in the active private parameters and verify
+custom HTTPS and SCM isolation afterward. Removing the temporary DB operator
+rule is a separate operation; preserve it unless that removal is approved.
+Future plan/egress changes require checking the DB allowlist again.
 
 Parent obtains `appHostname` and `domainVerificationId` privately from the
 deployment outputs. For the chosen status subdomain, the user creates its CNAME
@@ -323,8 +335,9 @@ confirmation. The update script rejects multiple workers and slots, serializes
 workflow runs, observes `Stopped` before changing the image, starts once, and
 checks the real application's readiness. It never schedules deployments,
 creates slots, scales out, or automatically rolls back across schema changes.
-The pilot's operator-only ingress will block hosted readiness probes, so this
-workflow is for post-cutover updates, not initial setup.
+Initial operator-only main ingress blocks hosted readiness probes. After the
+explicit public-access decision, probes use the public main hostname while
+SCM remains operator-only; this workflow is not for initial setup.
 
 ## Configuration-only migration and acceptance
 
