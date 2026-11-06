@@ -5,32 +5,12 @@ const REPOSITORY = "fletchto99/uptime-kuma-azure";
 const WORKFLOW = ".github/workflows/compatibility.yml";
 const IMAGE_PREFIX = `ghcr.io/${REPOSITORY}@sha256:`;
 
-function eligibleUpdate({ pr, run, mainSha, files, before, after }) {
-    if (pr.state !== "open" || pr.draft || pr.user?.login !== "dependabot[bot]" ||
-        pr.user?.id !== 49699333 || pr.user?.type !== "Bot") { return null; }
-    if (pr.base?.ref !== "main" || pr.base.repo?.full_name !== REPOSITORY ||
-        pr.head.repo?.full_name !== REPOSITORY || !pr.head.ref.startsWith("dependabot/docker/") ||
-        pr.base.sha !== mainSha || pr.mergeable_state !== "clean") { return null; }
-    if (run.conclusion !== "success" || run.event !== "pull_request" ||
-        run.repository?.full_name !== REPOSITORY || run.head_repository?.full_name !== REPOSITORY ||
-        run.head_sha !== pr.head.sha || run.path !== WORKFLOW) { return null; }
-    const tested = run.pull_requests?.find((item) => item.number === pr.number);
-    if (!tested || tested.head.sha !== pr.head.sha || tested.base.sha !== mainSha) { return null; }
-    if (files.length !== 1 || files[0].filename !== "Dockerfile" || files[0].status !== "modified") { return null; }
-    const oldLines = before.split("\n");
-    const newLines = after.split("\n");
-    if (oldLines.length !== newLines.length || oldLines.slice(1).join("\n") !== newLines.slice(1).join("\n")) { return null; }
-    const pattern = /^FROM louislam\/uptime-kuma:(\d+)\.(\d+)\.(\d+)@sha256:([a-f0-9]{64})$/;
-    const oldPin = oldLines[0].match(pattern);
-    const newPin = newLines[0].match(pattern);
-    if (!oldPin || !newPin || oldPin[1] !== newPin[1] || oldLines[0] === newLines[0]) { return null; }
-    const [oldMinor, oldPatch, newMinor, newPatch] = [oldPin[2], oldPin[3], newPin[2], newPin[3]].map(Number);
-    if (newMinor < oldMinor || (newMinor === oldMinor && newPatch < oldPatch)) { return null; }
-    return {
-        version: newPin.slice(1, 4).join("."),
-        updateType: newMinor > oldMinor ? "minor" : newPatch > oldPatch ? "patch" : "digest",
-        headSha: pr.head.sha,
-    };
+function eligibleMainRelease({ run, mainSha, workflowId }) {
+    return /^[a-f0-9]{40}$/.test(mainSha) && Number.isSafeInteger(workflowId) && workflowId > 0 &&
+        run.status === "completed" && run.conclusion === "success" && run.event === "push" &&
+        run.head_branch === "main" && run.head_sha === mainSha &&
+        run.repository?.full_name === REPOSITORY && run.head_repository?.full_name === REPOSITORY &&
+        run.workflow_id === workflowId && run.path === WORKFLOW;
 }
 
 function timestamp(value) {
@@ -69,4 +49,4 @@ function approvedImage(image) {
         /^[a-f0-9]{64}$/.test(image.slice(IMAGE_PREFIX.length));
 }
 
-module.exports = { eligibleUpdate, recoveryPair, approvedImage, REPOSITORY, WORKFLOW };
+module.exports = { eligibleMainRelease, recoveryPair, approvedImage, REPOSITORY, WORKFLOW };

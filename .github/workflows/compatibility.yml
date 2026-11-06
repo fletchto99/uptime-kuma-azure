@@ -40,7 +40,7 @@ jobs:
           node --check scripts/patch-database-tls.cjs
           node --check scripts/restore-settings.cjs
           node --check scripts/recovery-gate.cjs
-          node --check scripts/merge-dependabot.cjs
+          node --check scripts/release-gate.cjs
           node --check scripts/deployment-failure.cjs
           shellcheck tests/compatibility.sh scripts/deploy.sh
           npm ci --ignore-scripts --no-audit --no-fund

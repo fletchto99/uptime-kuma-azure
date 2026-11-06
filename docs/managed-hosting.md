@@ -339,17 +339,18 @@ controller. It uses the existing managed services and public image package.
 2. PR CI has no Azure access. It checks the readable tag/index digest, exact
    upstream TLS-patch source guards, actual app/MySQL/TLS cases, configuration
    migration, policy tests, shell lint and Bicep.
-3. `dependabot-merge.yml` runs trusted **main** code after successful PR CI.
-   It verifies the real Dependabot bot identity, same-repository Docker branch,
-   current head and base, successful expected workflow/job, and exactly one
-   modified Dockerfile. Only the first pinned upstream `FROM` line may change.
-   Downgrades, major versions, forks, extra files and changed patch logic are
-   refused. Native strict required checks remain the final merge gate.
-4. The workflow merges the exact verified head using REST, then explicitly
-   dispatches `deploy.yml` with the resulting main SHA. `GITHUB_TOKEN` merges
-   normally suppress push-triggered Actions; the explicit dispatch avoids
-   relying on that suppressed event. A failed dispatch is a visible workflow
-   failure requiring operator attention, never a claimed deployment.
+3. **The owner reviews and merges the PR** after required CI passes. There is
+   no bot approval, automatic merge workflow, merge queue or privileged merger
+   script. Native strict required checks remain the merge gate. Major changes
+   and TLS/source-guard drift require human review and any necessary code fix;
+   never refresh expected source hashes blindly.
+4. That merge's push to main runs compatibility and publishes a tested image.
+   `deploy.yml` listens for successful main compatibility completion. Its
+   read-only gate checks the actual workflow ID/path, same repository, push
+   event, main branch, completed test/publication jobs and exact current SHA.
+   Only trusted main is checked out. PRs, forks, feature branches, failed runs
+   and stale commits cannot deploy. Reusable compatibility calls within a
+   release are not push runs and cannot recursively start another release.
 5. A release re-runs trusted main CI through the reusable compatibility workflow,
    publishes the image and passes its exact digest to the deployment job.
    Main is checked again before changes; a stale request fails before stopping
@@ -365,9 +366,10 @@ Create the `production` environment with only the `main` branch allowed.
 Unattended operation cannot require a human approval on every deployment; the
 user approves the policy before activation instead. Main requires the trusted
 `mysql-tls` GitHub Actions check with strict up-to-date checks, no force pushes
-and no deletion. No administrator bypass or force merge is used. Major and
-source-guard changes remain manual because the merger refuses them, not because
-it invents a passing review.
+and no deletion. No administrator bypass or force merge is used. The owner
+decides which green PRs to merge; source-guard failures still block CI.
+The automatic release gate needs only contents/actions read permissions, not
+contents write, pull-request approval or workflow-dispatch permissions.
 
 Use a free user-assigned managed identity with a federated credential matching
 the **actual issued** subject for this repository's `production` environment,
@@ -399,13 +401,15 @@ This proves actual `GITHUB_TOKEN` environment access, OIDC login, scoped native
 metadata reads and the recovery gate without changing the app. Then the approved
 `operation=noop` performs one same-live-digest stop/start to prove write
 permissions and readiness. Only after both pass, set the repository variable
-`ENABLE_CONTROLLED_UPDATES=true`. The release operation and automatic merger
-remain disabled otherwise. No-op/verify dispatches still require main and the
-configured production environment.
+`ENABLE_CONTROLLED_UPDATES=true`. This enables releases after successful main
+push compatibility; it never authorizes bot merging. Automatic releases and
+manual `operation=release` remain disabled otherwise. No-op/verify dispatches
+still require main and the configured production environment.
 
-Eligibility and event-suppression handling are unit-tested; don't create fake
-Dependabot PRs or synthetic production incidents to claim live merging is proven.
-The first real eligible update exercises the real merge-to-release path.
+Trigger eligibility, source-run verification, current-SHA checks and prevention
+of recursive releases are unit-tested. Don't create fake Dependabot PRs or
+synthetic production incidents. A normal approved main push can verify the same
+automatic release hook used after an owner merge.
 
 ### Native recovery gate and failure reporting
 

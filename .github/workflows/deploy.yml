@@ -1,5 +1,9 @@
 name: Controlled Kuma update
 on:
+  workflow_run:
+    workflows: ["Kuma compatibility"]
+    branches: [main]
+    types: [completed]
   workflow_dispatch:
     inputs:
       operation:
@@ -9,7 +13,7 @@ on:
         type: choice
         options: [verify, noop, release]
       expected_sha:
-        description: Expected current main SHA (required for automatic release dispatch)
+        description: Optional expected current main SHA for manual dispatch
         required: false
         type: string
 permissions:
@@ -19,25 +23,27 @@ concurrency:
   cancel-in-progress: false
 jobs:
   gate:
+    if: github.repository == 'fletchto99/uptime-kuma-azure' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion == 'success' && vars.ENABLE_CONTROLLED_UPDATES == 'true'))
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
     outputs:
       operation: ${{ steps.gate.outputs.operation }}
+      expected_sha: ${{ steps.gate.outputs.expected_sha }}
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Require current main and an explicitly enabled release policy
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
           OPERATION: ${{ inputs.operation }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-          ENABLED: ${{ vars.ENABLE_CONTROLLED_UPDATES }}
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REPOSITORY" = fletchto99/uptime-kuma-azure
-          test "$GITHUB_REF" = refs/heads/main
-          case "$OPERATION" in verify|noop) ;; release) test "$ENABLED" = true ;; *) exit 1 ;; esac
-          test -z "$EXPECTED_SHA" || test "$EXPECTED_SHA" = "$GITHUB_SHA"
-          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$GITHUB_SHA"
-          echo "operation=$OPERATION" >> "$GITHUB_OUTPUT"
+          ENABLE_CONTROLLED_UPDATES: ${{ vars.ENABLE_CONTROLLED_UPDATES }}
+        run: node scripts/release-gate.cjs
   validate:
     needs: gate
     if: needs.gate.outputs.operation == 'release'
@@ -68,7 +74,7 @@ jobs:
       AZURE_PRINCIPAL_ID: ${{ secrets.AZURE_PRINCIPAL_ID }}
       GH_TOKEN: ${{ github.token }}
       UPDATE_OPERATION: ${{ needs.gate.outputs.operation }}
-      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      EXPECTED_SHA: ${{ needs.gate.outputs.expected_sha }}
       RELEASE_IMAGE: ${{ needs.validate.outputs.image }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

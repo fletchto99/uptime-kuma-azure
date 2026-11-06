@@ -3,68 +3,109 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const fs = require("node:fs");
 const path = require("node:path");
-const { eligibleUpdate, recoveryPair, approvedImage, REPOSITORY, WORKFLOW } = require("../scripts/update-policy.cjs");
+const { eligibleMainRelease, recoveryPair, approvedImage, REPOSITORY, WORKFLOW } = require("../scripts/update-policy.cjs");
+const { releaseGate } = require("../scripts/release-gate.cjs");
 
-function update() {
-    return {
-        mainSha: "base",
-        pr: {
-            number: 7, state: "open", draft: false, mergeable_state: "clean",
-            user: { login: "dependabot[bot]", id: 49699333, type: "Bot" },
-            base: { ref: "main", sha: "base", repo: { full_name: REPOSITORY } },
-            head: { ref: "dependabot/docker/louislam/uptime-kuma-2.5.10", sha: "head", repo: { full_name: REPOSITORY } },
+function release() {
+    const fixture = {
+        mainSha: "a".repeat(40),
+        workflowId: 11,
+        workflow: { id: 11, path: WORKFLOW, state: "active" },
+        event: { workflow_run: { id: 7 } },
+        env: {
+            GITHUB_REPOSITORY: REPOSITORY, GITHUB_REF: "refs/heads/main",
+            GITHUB_SHA: "a".repeat(40), GITHUB_EVENT_NAME: "workflow_run",
+            ENABLE_CONTROLLED_UPDATES: "true",
         },
         run: {
-            conclusion: "success", event: "pull_request", path: WORKFLOW, head_sha: "head",
+            id: 7, workflow_id: 11, status: "completed", conclusion: "success",
+            event: "push", path: WORKFLOW, head_sha: "a".repeat(40), head_branch: "main",
             repository: { full_name: REPOSITORY }, head_repository: { full_name: REPOSITORY },
-            pull_requests: [{ number: 7, head: { sha: "head" }, base: { sha: "base" } }],
         },
-        files: [{ filename: "Dockerfile", status: "modified" }],
-        before: `FROM louislam/uptime-kuma:2.5.9@sha256:${"a".repeat(64)}\nCOPY patch /patch\n`,
-        after: `FROM louislam/uptime-kuma:2.5.10@sha256:${"b".repeat(64)}\nCOPY patch /patch\n`,
+        jobs: { jobs: ["mysql-tls", "publish"].map((name) => ({ name, status: "completed", conclusion: "success" })) },
+        requests: [],
     };
+    fixture.api = async (request) => {
+        fixture.requests.push(request);
+        const responses = {
+            "commits/main": { sha: fixture.mainSha },
+            "actions/workflows/compatibility.yml": fixture.workflow,
+            "actions/runs/7": fixture.run,
+            "actions/runs/7/jobs?per_page=100": fixture.jobs,
+        };
+        assert.ok(Object.hasOwn(responses, request), `Unexpected API read: ${request}`);
+        return responses[request];
+    };
+    return fixture;
 }
 
-test("only exact patch/minor/digest changes from current trusted Dependabot CI qualify", () => {
-    assert.equal(eligibleUpdate(update()).updateType, "patch");
-    const minor = update(); minor.after = minor.after.replace("2.5.10", "2.6.0");
-    assert.equal(eligibleUpdate(minor).updateType, "minor");
-    const digest = update(); digest.after = digest.after.replace("2.5.10", "2.5.9");
-    assert.equal(eligibleUpdate(digest).updateType, "digest");
+test("successful current-main push compatibility releases using read-only source-run verification", async () => {
+    const fixture = release();
+    assert.equal(eligibleMainRelease(fixture), true);
+    assert.deepEqual(await releaseGate(fixture), { operation: "release", expectedSha: fixture.mainSha });
+    assert.deepEqual(fixture.requests, [
+        "commits/main", "actions/workflows/compatibility.yml", "actions/runs/7",
+        "actions/runs/7/jobs?per_page=100",
+    ]);
 });
 
-test("forged actors, stale commits/bases, major versions, forks and extra changes never qualify", () => {
-    const cases = [
-        (x) => { x.pr.user.id = 1; },
-        (x) => { x.pr.user.type = "User"; },
-        (x) => { x.pr.user.login = "someone"; },
-        (x) => { x.pr.state = "closed"; },
-        (x) => { x.pr.draft = true; },
-        (x) => { x.pr.mergeable_state = "behind"; },
-        (x) => { x.pr.head.repo.full_name = "fork/repo"; },
-        (x) => { x.pr.head.ref = "user-branch"; },
-        (x) => { x.pr.base.ref = "other"; },
-        (x) => { x.mainSha = "new-main"; },
-        (x) => { x.run.head_sha = "old-head"; },
-        (x) => { x.run.pull_requests[0].base.sha = "old-base"; },
-        (x) => { x.run.pull_requests = []; },
+test("PR, fork, feature, failed, stale and reusable release runs never qualify", async () => {
+    for (const mutate of [
+        (x) => { x.run.event = "pull_request"; },
+        (x) => { x.run.event = "workflow_dispatch"; },
+        (x) => { x.run.event = "workflow_call"; },
+        (x) => { x.run.event = "workflow_run"; },
+        (x) => { x.run.head_branch = "feature"; },
         (x) => { x.run.conclusion = "failure"; },
-        (x) => { x.run.event = "push"; },
+        (x) => { x.run.conclusion = "cancelled"; },
+        (x) => { x.run.status = "in_progress"; },
+        (x) => { x.run.head_sha = "b".repeat(40); },
+        (x) => { x.run.workflow_id = 12; },
         (x) => { x.run.path = ".github/workflows/untrusted.yml"; },
+        (x) => { x.run.repository.full_name = "fork/repo"; },
         (x) => { x.run.head_repository.full_name = "fork/repo"; },
-        (x) => { x.files.push({ filename: ".github/workflows/deploy.yml", status: "modified" }); },
-        (x) => { x.files[0].status = "renamed"; },
-        (x) => { x.after = x.after.replace("2.5.10", "3.0.0"); },
-        (x) => { x.after = x.after.replace("2.5.10", "2.5.8"); },
-        (x) => { x.after = x.after.replace("COPY patch /patch", "RUN malicious"); },
-        (x) => { x.after = x.after.replace("louislam/uptime-kuma", "untrusted/image"); },
-        (x) => { x.after = x.before; },
-    ];
-    for (const mutate of cases) {
-        const fixture = update();
-        mutate(fixture);
-        assert.equal(eligibleUpdate(fixture), null);
+    ]) {
+        const fixture = release(); mutate(fixture);
+        assert.equal(eligibleMainRelease(fixture), false);
+        await assert.rejects(releaseGate(fixture));
     }
+});
+
+test("disabled deployments, changed main, missing publication and invalid metadata fail closed", async () => {
+    for (const mutate of [
+        (x) => { x.env.ENABLE_CONTROLLED_UPDATES = "false"; },
+        (x) => { x.env.GITHUB_REPOSITORY = "fork/repo"; },
+        (x) => { x.env.GITHUB_REF = "refs/heads/feature"; },
+        (x) => { x.env.GITHUB_SHA = "bad"; },
+        (x) => { x.mainSha = "b".repeat(40); },
+        (x) => { x.event.workflow_run.id = "7/other"; },
+        (x) => { x.workflow.state = "disabled_manually"; },
+        (x) => { x.workflow.path = ".github/workflows/untrusted.yml"; },
+        (x) => { x.jobs.jobs = []; },
+        (x) => { x.jobs.jobs[0].conclusion = "failure"; },
+        (x) => { x.jobs.jobs[1].conclusion = "skipped"; },
+        (x) => { x.api = async () => { throw new Error("GitHub unavailable"); }; },
+    ]) {
+        const fixture = release(); mutate(fixture);
+        await assert.rejects(releaseGate(fixture));
+    }
+});
+
+test("manual verification/restart stay available; manual releases need activation and matching main", async () => {
+    for (const operation of ["verify", "noop", "release"]) {
+        const fixture = release();
+        Object.assign(fixture.env, {
+            GITHUB_EVENT_NAME: "workflow_dispatch", OPERATION: operation,
+            EXPECTED_SHA: fixture.mainSha, ENABLE_CONTROLLED_UPDATES: operation === "release" ? "true" : "false",
+        });
+        assert.deepEqual(await releaseGate(fixture), { operation, expectedSha: fixture.mainSha });
+        assert.deepEqual(fixture.requests, ["commits/main"]);
+        fixture.env.EXPECTED_SHA = "b".repeat(40);
+        await assert.rejects(releaseGate(fixture));
+    }
+    const disabled = release();
+    Object.assign(disabled.env, { GITHUB_EVENT_NAME: "workflow_dispatch", OPERATION: "release", ENABLE_CONTROLLED_UPDATES: "false" });
+    await assert.rejects(releaseGate(disabled));
 });
 
 function backups() {
@@ -107,12 +148,21 @@ test("missing, stale, future or out-of-window backup evidence fails closed", () 
     }
 });
 
-test("only immutable package digests qualify and token merges explicitly dispatch a release", () => {
+test("only immutable package digests qualify; workflow wiring never merges or recursively releases", () => {
     assert.ok(approvedImage(`ghcr.io/${REPOSITORY}@sha256:${"a".repeat(64)}`));
     assert.ok(!approvedImage(`ghcr.io/${REPOSITORY}:latest`));
     assert.ok(!approvedImage(`ghcr.io/other/image@sha256:${"a".repeat(64)}`));
-    const merger = fs.readFileSync(path.join(__dirname, "..", "scripts", "merge-dependabot.cjs"), "utf8");
-    assert.match(merger, /actions\/workflows\/deploy\.yml\/dispatches/);
-    assert.match(merger, /expected_sha: merged\.sha/);
-    assert.match(merger, /sha: update\.headSha/);
+    const root = path.join(__dirname, "..");
+    assert.equal(fs.existsSync(path.join(root, "scripts", "merge-dependabot.cjs")), false);
+    assert.equal(fs.existsSync(path.join(root, ".github", "workflows", "dependabot-merge.yml")), false);
+    const deployment = fs.readFileSync(path.join(root, ".github", "workflows", "deploy.yml"), "utf8");
+    assert.match(deployment, /workflow_run:\s+workflows: \["Kuma compatibility"\]\s+branches: \[main\]\s+types: \[completed\]/);
+    assert.match(deployment, /github\.event\.workflow_run\.event == 'push'/);
+    assert.match(deployment, /ref: \$\{\{ github\.sha \}\}/);
+    assert.match(deployment, /EXPECTED_SHA: \$\{\{ needs\.gate\.outputs\.expected_sha \}\}/);
+    assert.match(deployment, /actions: read/);
+    for (const name of fs.readdirSync(path.join(root, ".github", "workflows"))) {
+        const workflow = fs.readFileSync(path.join(root, ".github", "workflows", name), "utf8");
+        assert.doesNotMatch(workflow, /(?:contents|pull-requests|actions): write/);
+    }
 });
