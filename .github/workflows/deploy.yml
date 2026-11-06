@@ -32,7 +32,7 @@ jobs:
       operation: ${{ steps.gate.outputs.operation }}
       expected_sha: ${{ steps.gate.outputs.expected_sha }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -77,7 +77,7 @@ jobs:
       EXPECTED_SHA: ${{ needs.gate.outputs.expected_sha }}
       RELEASE_IMAGE: ${{ needs.validate.outputs.image }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Require masked environment identifiers
@@ -85,7 +85,7 @@ jobs:
           test -n "$AZURE_CLIENT_ID" && test -n "$AZURE_TENANT_ID" && test -n "$AZURE_SUBSCRIPTION_ID"
           test -n "$AZURE_RESOURCE_GROUP" && test -n "$AZURE_WEBAPP_NAME" && test -n "$AZURE_MYSQL_SERVER_NAME"
           echo "DEPLOYMENT_FAILURE_FILE=$RUNNER_TEMP/deployment-failure.json" >> "$GITHUB_ENV"
-      - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac # v2
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
         id: azure_login
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -94,7 +94,7 @@ jobs:
       - name: Verify scoped reads and native recovery metadata
         id: recovery
         run: node scripts/recovery-gate.cjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recovery-metadata
           path: ${{ runner.temp }}/recovery.json
