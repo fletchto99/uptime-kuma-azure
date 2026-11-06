@@ -1,23 +1,28 @@
-# Managed hosting readiness
+# Managed hosting operations
 
-## Pilot deployment runbook
+For routine operation, use [Controlled updates](#controlled-updates),
+[Application health, Linux recovery and SSH](#application-health-linux-recovery-and-ssh),
+and [Backup, restore, and rollback acceptance](#backup-restore-and-rollback-acceptance).
+[Resource/cost assumptions](#resources-and-spending-decision) and
+[Initial provisioning](#initial-provisioning) are setup references, not steps
+to repeat for an image update.
 
-The approved direction is App Service B1 plus Azure Database for MySQL Flexible
-Server B1ms, using MySQL 8.4 LTS. The approved migration scope is configuration
-only, not historical heartbeats or uptime records. No alternative platform,
+The service uses App Service B1 plus Azure Database for MySQL Flexible Server
+B1ms, using MySQL 8.4 LTS. The one-time configuration migration is complete;
+historical heartbeats remain in the retained private archive. No alternative platform,
 SQLite synchronization service, or self-managed database is proposed here.
 
-**Current target: West US 3 for App Service, West US 2 for MySQL and the resource
-group.** Paid provisioning requires successful full Provider preflight and explicit
-release. Previous Central US, West Central US, all-West US 2 and East US 2 proposals are inactive; retain
-their private failure evidence and encrypted credentials as history, not as the
-next deployment's parameter inputs. A Portal region/version selection alone
-does not prove that the small SKU can be allocated.
+**Deployment regions: West US 3 for App Service, West US 2 for MySQL and the
+resource group.** New paid provisioning requires successful full Provider
+preflight and explicit approval. Use the active private environment parameters,
+not superseded regional proposals.
 
-The stock Kuma 2.5.9 gate found missing TLS hostname verification. The user
+## Image customization and compatibility
+
+The stock Kuma 2.5.9 gate found missing TLS hostname verification. The owner
 approved the smallest source-checked fix: `verifyIdentity: true` at the two
 runtime connection sites and the setup connection. Existing CA handling and
-`rejectUnauthorized: true` are unchanged. `scripts/patch-database-tls.cjs`
+`rejectUnauthorized: true` are unchanged. `scripts/patch-managed-hosting.cjs`
 checks complete upstream source hashes and expected match counts before
 writing anything; upstream changes fail the build rather than silently skipping
 the fix. It also checks `server/server.js` before inserting the single managed
@@ -27,40 +32,12 @@ refresh.
 `infra/main.bicep` compiles offline. Provisioning is separate from the controlled
 update workflow; there is no registry webhook or scheduled infrastructure deploy.
 Automatic updates require the explicit repository activation switch below.
-This file documents generic code and procedures, not live resource state.
+This file documents code and procedures, not a live resource-state inventory.
 Subscription details, credentials, deployment outputs and approvals stay private.
 
-## Evidence and limits
-
-[Final hosted run on 2026-11-05](https://github.com/fletchto99/uptime-kuma-azure/actions/runs/41985786213)
-passed at code revision `d6c429e028a2a973e19327749b8a45730213136b`, with no
-Azure resources or private data:
-
-| Check | Result |
-| --- | --- |
-| Patched official Kuma 2.5.9 initializes MySQL 8.4.9 | Pass, 28 tables and application listening |
-| Valid CA and matching hostname | Pass, TLS cipher in use |
-| Untrusted CA | Rejected as required |
-| Explicit driver `verifyIdentity: true`, wrong hostname | Rejected as required |
-| Actual patched Kuma, wrong hostname or untrusted CA | Both rejected |
-| Stopped SQLite export and actual private import CLI | Pass, six HTTP monitors paused |
-| Every exported HTTP field, notification credentials and remapped associations | Pass |
-| Status-page monitor groups/order and app settings | Pass |
-| Actual HTTP polling and an UP heartbeat stored in MySQL | Pass |
-| Source-change patch guard and unsafe configuration rejection | Pass |
-| Update ordering, failure-stop behavior and singleton/approval guards | Pass |
-| Bicep compilation and anonymous public image pull | Pass |
-
-Historical initial pilot image (TLS patch only; **not** suitable for the new
-`/healthz` configuration):
-
-```text
-ghcr.io/fletchto99/uptime-kuma-azure@sha256:a5b870e1f90016d9bd3ac78600e474b5320a4e8b2349a3fdb29827d59ed0b210
-```
-
-Historical readable tag: `2.5.9-tls-d6c429e028a2`. Use the new health-enabled
-image digest returned by trusted CI, not this old candidate or a mutable tag.
-Tested images are recorded in CI's job summary and the private runtime handoff.
+Use the health-enabled image digest from trusted CI, never an old pilot digest
+or a mutable tag. Tested images are recorded in CI's job summary and the private
+runtime handoff; recovery receipts record the previous and candidate digests.
 The [original stock-release diagnosis](https://github.com/fletchto99/uptime-kuma-azure/actions/runs/41982440614)
 remains available: unmodified 2.5.9 accepted a trusted certificate for the wrong
 hostname, which is why the narrow patch exists.
@@ -89,13 +66,17 @@ Its bundled
 [mysql2 3.11.5 TLS implementation](https://github.com/sidorares/node-mysql2/blob/v3.11.5/lib/base/connection.js)
 skips the hostname check without that flag. A trusted CA alone is not sufficient.
 The patched image must pass an actual-app mismatched-host test, not only a
-standalone driver test. To remove the patch, verify that a released upstream
-image implements strict identity verification at all three sites, remove the
-Dockerfile patch steps and script, and pass the same negative tests.
+standalone driver test. To retire the TLS workaround, verify that a released upstream
+image implements strict identity verification at all three sites, remove only
+the TLS edits and their source guards, and pass the same negative tests.
+Keep the managed-health module, health-route insertion and its source guard,
+and Dockerfile patch invocation: TLS support upstream does not replace `/healthz`.
 
 ## Resources and spending decision
 
-Selected split-region CAD retail estimates, at 730 hours/month, before taxes:
+Initial split-region CAD retail estimates, at 730 hours/month, before taxes.
+These are planning assumptions, not current billing; recheck rates and usage
+before changing resources:
 
 | Component | Assumption | Estimated CAD/month |
 | --- | --- | ---: |
@@ -122,19 +103,19 @@ instance, but the following variable costs must be included in the live estimate
   quota; no additional Azure Files account is needed. Current App Service
   documentation includes automatic hourly backups on Basic, with 30-day
   retention, no separate storage account, and coverage of custom-container
-  persistent storage. Verify a restorable snapshot in the pilot. Downloadable
+  persistent storage. Verify a restorable snapshot before relying on this coverage. Downloadable
   or on-demand custom backups are optional and require a separately priced
   SAS-authorized Blob account; none is silently added here.
 - **Secrets:** encrypted App Service settings need no dedicated secret service.
   If a Key Vault reference is selected, price its operations and any retention
   requirements separately; do not claim Key Vault is free.
 - **Traffic:** the West US 3 app connects to the West US 2 database over
-  certificate- and hostname-verified TLS. Cross-region outgoing traffic is
-  currently CAD0.0281/GB in each direction; count requests and responses
+  certificate- and hostname-verified TLS. Cross-region outgoing traffic
+  was quoted at CAD0.0281/GB in each direction; count requests and responses
   separately, not the same transfer twice. Incoming traffic is free. Internet
   egress and other applicable network charges remain additional. Actual volume
   and database latency are unmeasured; HTTP probes originate from West US 3.
-- **Recovery and migration overlap:** point-in-time recovery creates a new
+- **Recovery overlap:** point-in-time recovery creates a new
   billable MySQL server. Any still-provisioned old disks, public IPs, or running
   compute are separate charges; don't assume that stopping/deallocating compute
   removes them. Original infrastructure deletion remains a separate destructive
@@ -157,10 +138,11 @@ References:
 [MySQL tiers/storage](https://learn.microsoft.com/azure/mysql/flexible-server/concepts-service-tiers-storage),
 [App Service automatic backup coverage](https://learn.microsoft.com/azure/app-service/manage-backup).
 
-## Provisioning and pilot
+## Initial provisioning
 
-The parent must approve a concrete IaC preview and live resource estimate before
-creation. The intended bounded setup is:
+This section is for creating a new environment, not updating the running service.
+The owner must approve a concrete IaC preview and live resource estimate before
+creation. The bounded setup is:
 
 1. One Linux B1 plan and one app, one Kuma worker, Always On, HTTPS-only,
    application port 3001. No slots, scale-out, registry webhooks, or rolling
@@ -247,7 +229,7 @@ The image-update workflow doesn't redeploy these access settings.
 `appLocation` defaults to `westus3`; `databaseLocation` defaults to `westus2`. The examples
 also explicitly override any stale region values from private parameter files.
 A resource group's metadata location does not override either resource location.
-Use the West US 2 pilot resource group and fresh globally available names;
+Use the approved West US 2 resource group and fresh globally available names;
 do not overwrite manually created resources, reuse old proposal parameters or
 assume retained credentials are active. Never adopt the Portal's larger
 General Purpose workload default in place of the approved Burstable B1ms.
@@ -267,7 +249,7 @@ one temporary operator IP. Create the scoped user using the privately completed
 Never use the administrator as the runtime user or enable insecure TLS to get
 past a startup failure.
 
-After setup/import, verify that unauthenticated protected Kuma API calls are
+After initial configuration, verify that unauthenticated protected Kuma API calls are
 denied, then obtain explicit approval before setting `publicAccess: true`.
 This changes only the main-site policy to allow public traffic; it does not
 disable Kuma authentication, open SCM, or modify MySQL firewall rules.
@@ -277,56 +259,12 @@ custom HTTPS and SCM isolation afterward. Removing the temporary DB operator
 rule is a separate operation; preserve it unless that removal is approved.
 Future plan/egress changes require checking the DB allowlist again.
 
-Parent obtains `appHostname` and `domainVerificationId` privately from the
+The operator obtains `appHostname` and `domainVerificationId` privately from the
 deployment outputs. For the chosen status subdomain, the user creates its CNAME
 to `appHostname` and an `asuid.<subdomain>` TXT containing the verification ID.
-After propagation the parent binds the hostname, creates and binds the free
+After propagation the operator binds the hostname, creates and binds the free
 App Service managed certificate, and verifies HTTPS. No placeholder DNS values
 are suitable for cutover. No domain bindings or DNS changes are automated here.
-
-## Private configuration tooling
-
-The source inventory was checked privately: six HTTP monitors, one notification,
-six notification links, one status page/group, six group links; no tags,
-maintenance, parent monitors, proxies, Docker hosts or remote browsers. The
-helper deliberately does not implement unused features.
-
-1. Work from a copy of the stopped, complete source directory. Retain the
-   untouched archive. Use Python 3.9+ and Node 22+ on the operator machine;
-   local Docker is not required.
-2. Export with `python .\scripts\export_settings.py C:\Private\kuma\kuma.db C:\Private\kuma\settings.json`.
-   The exporter opens SQLite read-only and refuses to overwrite output.
-   The manifest contains real credentials and is **secret**. Restrict its ACL
-   on Windows; POSIX creation uses mode 0600. It includes a PNG status logo if
-   referenced, keeps private HTTP fields, and maps the six associations.
-3. Review `manualSettings` privately. Known regenerated DB-migration state and
-   JWT secrets are deliberately excluded; other non-general settings are
-   included for manual restoration. Set `manualSettingsReviewed` only after
-   deciding how each is restored or confirming it is obsolete. Unsupported
-   inventory, nondefault unsupported status-page fields or non-PNG upload
-   logos fail export instead of being silently dropped.
-   The importer regenerates the first-login timezone marker using the source's
-   explicit timezone, so a later browser login cannot silently replace it.
-4. Create a fresh administrator in the restricted destination UI. Import before
-   enabling its 2FA, then enroll 2FA separately. Install the helper dependency
-   with `npm ci --ignore-scripts`. Set `KUMA_URL`, `KUMA_USERNAME`,
-   `KUMA_PASSWORD` in the private process environment, not shell arguments or
-   checked-in files. `KUMA_URL` must be HTTPS except loopback testing.
-5. Run `node .\scripts\restore-settings.cjs C:\Private\kuma\settings.json C:\Private\kuma\mapping.json`.
-   The CLI refuses Actions, a nonempty destination or an existing report.
-   It uses the authenticated UI Socket.IO API, not direct MySQL writes.
-   It creates the notification before monitors and remaps status-page ordering.
-   All monitors remain paused. The private mapping records which were originally
-   active for the eventual operator-controlled cutover.
-6. On error, inspect the destination privately. Imports are **not transactional**
-   across UI API calls. Do not rerun against a partial destination; explicitly
-   clean/recreate the disposable pilot only after reviewing what happened.
-   Preserve the source and report. Never print manifests or provider credentials.
-
-The helpers do not copy users, sessions, old IDs, history, SQLite schema, or
-database migration metadata. They are version-specific internal-UI tooling,
-not an upstream-supported universal importer. The full hosted round-trip uses
-synthetic data only; the private acceptance comparison is still mandatory.
 
 ## Controlled updates
 
@@ -345,7 +283,7 @@ controller. It uses the existing managed services and public image package.
    validation.
    Test jobs have no Azure access. They check the readable tag/index digest,
    exact upstream TLS-patch source guards, actual app/MySQL/TLS cases,
-   configuration migration, policy tests, shell lint and Bicep.
+   application configuration/polling, policy tests, shell lint and Bicep.
 3. **The owner reviews and merges the PR** after required CI passes. There is
    no bot approval, automatic merge workflow, merge queue or privileged merger
    script. Native strict required checks remain the merge gate. Major changes
@@ -523,53 +461,20 @@ References:
 [Health Check semantics](https://learn.microsoft.com/azure/app-service/monitor-instances-health-check),
 [SSH access control](https://learn.microsoft.com/azure/app-service/configure-linux-open-ssh-session#control-ssh-access).
 
-## Configuration-only migration and acceptance
-
-Retain the original verified full-directory backup unchanged and private. Work
-from a copy on an approved private operator machine, never a public runner.
-The public fixture is not a production importer and accepts no real backup.
-
-Inventory each source configuration field before restoration: six monitors,
-notification agent(s) and credentials, monitor/notification relationships,
-status-page metadata/groups/order, app settings, tags, maintenance windows,
-proxies, remote browsers, Docker hosts/certificates, OAuth/client credentials,
-and upload assets if present. Some may not be used; record that explicitly.
-Do not infer absence from the public fixture.
-
-Use the released application's UI or the bounded helpers above after confirming
-the exact source fields.
-These are internal UI APIs, not a promised stable public migration API:
-
-1. Create a new administrator and re-enroll 2FA separately. Do not copy users,
-   password hashes, JWT signing secrets, or old sessions blindly.
-2. Restore notification configurations and other referenced objects first.
-   Preserve credentials privately; record old-to-new IDs.
-3. Create monitor groups/parents before child monitors, and create all monitors
-   paused. Map notification, parent, proxy, Docker, browser, tag, and maintenance
-   references as applicable; never reuse old numeric IDs by coincidence.
-4. Restore the status page, its public groups/order, display settings, domains,
-   logo and custom CSS; map its monitor IDs. Restore relevant app settings,
-   including timezone, retention preferences and entry page.
-5. Compare a field-by-field private inventory and counts. Explicitly flag any
-   unsupported monitor type/provider or setting; do not omit it. Test a
-   notification only with the owner's approval, since that sends a real
-   external message. Verify no real monitors are running before cutover.
-6. Parent coordinates stopping the source (already stopped per the handoff),
-   enabling the replacement monitors once, and verifying polling/notifications.
-   User updates DNS only after the parent supplies the actual CNAME target
-   and `asuid` verification TXT value. Bind the hostname and managed certificate
-   and verify HTTPS before retiring the old endpoint.
-
-Historical records remain available in the private source archive but are not
-imported into the fresh service. Six synthetic HTTP monitors do not prove every
-actual monitor type or every provider credential; the private inventory and
-acceptance check remain mandatory.
-
 ## Backup, restore, and rollback acceptance
+
+The inventory-specific tools for the completed SQLite-to-MySQL configuration
+migration have been retired. Preserve the original verified full-directory
+archive unchanged and private, including historical heartbeats; it is not an
+ongoing MySQL backup or a general-purpose import path.
+No source backup or private configuration may enter this repository, images,
+hosted CI, logs, or artifacts. Restrict private backup ACLs: Kuma persists resolved
+database credentials in `db-config.json`, so its data directory and backups
+remain secret even when initial credentials come from a secret reference.
 
 Managed MySQL point-in-time backups cover the database, not uploaded assets.
 App Service automatic snapshots cover the persistent data directory, including
-`db-config.json`, without a new storage account. In the pilot, verify the Backups
+`db-config.json`, without a new storage account. Verify that the Backups
 page actually has a restorable snapshot and test restoration while monitors are
 paused. Keep configuration/asset changes outside update windows, retain native
 snapshots and the private source archive, and use the recovery gate above.

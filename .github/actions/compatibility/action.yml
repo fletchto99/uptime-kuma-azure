@@ -10,13 +10,11 @@ runs:
         bash -n tests/compatibility.sh
         node --check tests/mysql-tls.cjs
         node --check tests/configuration.cjs
-        node --check scripts/patch-database-tls.cjs
-        node --check scripts/restore-settings.cjs
+        node --check scripts/patch-managed-hosting.cjs
         node --check scripts/recovery-gate.cjs
         node --check scripts/release-gate.cjs
         node --check scripts/deployment-failure.cjs
         shellcheck tests/compatibility.sh scripts/deploy.sh
-        npm ci --ignore-scripts --no-audit --no-fund
         npm test
         python3 -m unittest discover -s tests -p '*_test.py'
     - name: Compile infrastructure without Azure access

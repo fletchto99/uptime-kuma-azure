@@ -15,7 +15,7 @@ const patches = targets.map(([relative, expectedHash, expectedCount]) => {
     const file = path.join("/app", relative);
     const source = fs.readFileSync(file, "utf8");
     const hash = createHash("sha256").update(source).digest("hex");
-    assert.equal(hash, expectedHash, `${relative} changed upstream; review or remove the TLS patch`);
+    assert.equal(hash, expectedHash, `${relative} changed upstream; review the TLS patch`);
     const pattern = /^([ \t]*)rejectUnauthorized: true,$/gm;
     assert.equal([...source.matchAll(pattern)].length, expectedCount, `${relative}: unexpected SSL configuration`);
     const content = source.replace(pattern, "$1rejectUnauthorized: true,\n$1verifyIdentity: true,");
