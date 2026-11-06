@@ -1,0 +1,35 @@
+name: Kuma compatibility suite
+description: Validate scripts, infrastructure and the patched image without Azure credentials
+
+runs:
+  using: composite
+  steps:
+    - name: Validate scripts
+      shell: bash
+      run: |
+        bash -n tests/compatibility.sh
+        node --check tests/mysql-tls.cjs
+        node --check tests/configuration.cjs
+        node --check scripts/patch-database-tls.cjs
+        node --check scripts/restore-settings.cjs
+        node --check scripts/recovery-gate.cjs
+        node --check scripts/release-gate.cjs
+        node --check scripts/deployment-failure.cjs
+        shellcheck tests/compatibility.sh scripts/deploy.sh
+        npm ci --ignore-scripts --no-audit --no-fund
+        npm test
+        python3 -m unittest discover -s tests -p '*_test.py'
+    - name: Compile infrastructure without Azure access
+      shell: bash
+      run: |
+        az bicep install --version v0.48.1
+        az bicep build --file infra/main.bicep --outfile "$RUNNER_TEMP/main.json"
+    - name: Test patched release with synthetic MySQL and TLS certificates
+      shell: bash
+      run: bash tests/compatibility.sh
+    - name: Report failed compatibility gate
+      if: failure()
+      shell: bash
+      run: |
+        echo "::error::Compatibility gate failed. Do not provision or deploy this candidate."
+        echo "Deployment remains blocked. Inspect the synthetic compatibility results above." >> "$GITHUB_STEP_SUMMARY"

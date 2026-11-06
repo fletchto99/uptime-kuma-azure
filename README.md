@@ -36,13 +36,13 @@ provide multi-instance HA or guarantee immediate recovery.
 Docker-only Dependabot checks weekly on Monday at 10:00 UTC (GitHub may delay
 scheduled work). **The owner reviews and merges Dependabot PRs** after the
 required compatibility CI passes. Nothing automatically approves or merges them.
-Every push and PR runs the full required `mysql-tls` suite, without file or
-branch filters, including documentation-only changes. Publishing and deployment
-remain main-only: every successful current-main push is eligible for the
-guarded release. Documentation-only main pushes intentionally rebuild and can
-briefly restart Kuma after the existing backup, identity and health gates pass.
-Other branch/tag pushes and PRs only run tests. Major versions require a
-separate manual change.
+Every PR and push to `main` runs the full required `mysql-tls` suite, without
+file filters, including documentation-only changes. Feature-branch and tag
+pushes do not start CI; opening or updating a PR starts one test-only run.
+Publishing and deployment remain main-only: every successful current-main push
+is eligible for the guarded release. Documentation-only main pushes
+intentionally rebuild and can briefly restart Kuma after the existing backup,
+identity and health gates pass. Major versions require a separate manual change.
 An update that changes either patch
 target requires reviewing the source and guards. Remove the patch when upstream
 sets `verifyIdentity: true` for all database connection paths, then rerun the
@@ -66,6 +66,11 @@ See [the activation, recovery and failure contract](docs/managed-hosting.md#cont
 - Actual healthy/DB-disconnected/concurrent health requests, plus timeout,
   coalescing, minimal-response and recovery unit tests. Production is not
   deliberately crashed or disconnected for these tests.
+
+`Kuma PR checks` contains only the required `mysql-tls` job, with no skipped
+publication job. It and the main-only `Kuma compatibility` workflow use the
+same local compatibility action, so their test suites stay identical.
+Manual compatibility dispatches remain available for explicit branch validation.
 
 Passing main CI publishes a generic credential-free amd64 image to
 GHCR and verifies anonymous pull access. The release reuses the compatibility

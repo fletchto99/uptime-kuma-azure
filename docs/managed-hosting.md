@@ -336,11 +336,15 @@ controller. It uses the existing managed services and public image package.
 1. Weekly Docker-only Dependabot checks run Monday at 10:00 UTC; GitHub scheduling
    is best-effort, not an exact maintenance-time guarantee. Major updates are
    ignored by Dependabot and require a separate manual change.
-2. Every push and PR runs the full required `mysql-tls` suite, including
-   documentation-only changes, with no CI file or branch filters. Test jobs
-   have no Azure access. They check the readable tag/index digest, exact
-   upstream TLS-patch source guards, actual app/MySQL/TLS cases, configuration
-   migration, policy tests, shell lint and Bicep.
+2. Every PR and push to `main` runs the full required `mysql-tls` suite,
+   including documentation-only changes, with no CI file filters.
+   Feature-branch and tag pushes do not start CI; PRs get one test-only run
+   from `pull-request.yml`, with no publication job. It and the main-only
+   `compatibility.yml` workflow share `.github/actions/compatibility`.
+   Manual compatibility dispatches remain available for branch validation.
+   Test jobs have no Azure access. They check the readable tag/index digest,
+   exact upstream TLS-patch source guards, actual app/MySQL/TLS cases,
+   configuration migration, policy tests, shell lint and Bicep.
 3. **The owner reviews and merges the PR** after required CI passes. There is
    no bot approval, automatic merge workflow, merge queue or privileged merger
    script. Native strict required checks remain the merge gate. Major changes
@@ -350,7 +354,7 @@ controller. It uses the existing managed services and public image package.
    for the guarded release, including documentation-only main pushes. This
    intentionally permits a rebuild and brief serialized restart for docs-only
    changes; no backup, provenance, current-SHA, OIDC or health gate is bypassed.
-   Other branch/tag pushes and PRs test without publishing or deploying.
+   PRs test without publishing or deploying.
    `deploy.yml` listens for successful main compatibility completion. Its
    read-only gate checks the actual workflow ID/path, same repository, push
    event, main branch, completed test/publication jobs and exact current SHA.
