@@ -22,8 +22,9 @@ checks both complete upstream source hashes and expected match counts before
 writing anything; upstream changes fail the build rather than silently skipping
 the fix.
 
-`infra/main.bicep` compiles offline. The manual update workflow is disabled;
-there is no provisioning workflow, schedule, auto-merge, or registry webhook.
+`infra/main.bicep` compiles offline. Provisioning is separate from the controlled
+update workflow; there is no registry webhook or scheduled infrastructure deploy.
+Automatic updates require the explicit repository activation switch below.
 This file documents generic code and procedures, not live resource state.
 Subscription details, credentials, deployment outputs and approvals stay private.
 
@@ -185,15 +186,14 @@ creation. The intended bounded setup is:
    Keep the administrator credential only in the private provisioning process.
    Use a runtime secret or Key Vault reference for the application password.
    Do not claim Kuma can refresh Entra database tokens.
-5. The manual Actions update uses OIDC and a protected deployment
+5. The controlled Actions update uses OIDC and a main-only deployment
    environment. Scope the federated identity to the repository/environment and
    minimum Azure deployment permissions. Tenant/subscription/client IDs are
-   nonsecret variables, but stay out of public source/logs per the user's
-   privacy requirement. The workflow loads environment variables through the
-   authenticated GitHub API and masks them before placing them in the runner
-   environment or calling Azure login. A failure to read variables fails before
-   Azure login. Verify this environment permission during activation; do not
-   fall back to printing IDs or adding persistent Azure credentials. Synthetic
+   nonsecret identifiers, but stay out of public source/logs per the user's
+   privacy requirement. Store them in GitHub environment **Secrets** solely
+   for native masking, not because they are long-lived Azure credentials.
+   The workflow uses native contexts rather than a privileged variable-loader
+   API. Never store a database password or Azure client secret in Actions. Synthetic
    PR CI gets no Azure permission and must never read production secrets.
 6. Deploy only an explicitly approved immutable image. Back up the DB and
    assets, stop the app, verify it is stopped, update the image/settings, and
@@ -202,8 +202,8 @@ creation. The intended bounded setup is:
    code against a newly migrated schema. No automatic retry of the entire
    deployment or parallel replacement. Azure platform maintenance is outside
    this procedure; no strict distributed exactly-once claim is made.
-7. Leave the manual update activation variable unset until the pilot is
-   explicitly released. Dependabot only proposes Docker updates.
+7. Leave `ENABLE_CONTROLLED_UPDATES` false until the code, scoped OIDC reads and
+   same-image deployment verification have passed and activation is approved.
    Public CI failures notify through GitHub Actions subscriptions; confirm the
    owner's delivery settings. The workflow emits explicit errors/summary on
    failure, and the script stops a failed replacement. Confirm GitHub Actions
@@ -318,23 +318,114 @@ database migration metadata. They are version-specific internal-UI tooling,
 not an upstream-supported universal importer. The full hosted round-trip uses
 synthetic data only; the private acceptance comparison is still mandatory.
 
-## Controlled updates (still disabled)
+## Controlled updates
 
-The code is prepared; do not set `ENABLE_AZURE_DEPLOYMENT=true` yet.
-After pilot approval and merge to `main`, create a protected GitHub environment
-named `production` with required reviewers. Set its nonsecret variables
+The pipeline is deterministic GitHub Actions, not an AI agent or runtime
+controller. It uses the existing managed services and public image package.
+
+1. Weekly Docker-only Dependabot checks run Monday at 10:00 UTC; GitHub scheduling
+   is best-effort, not an exact maintenance-time guarantee. Major updates are
+   ignored by Dependabot and require a separate manual change.
+2. PR CI has no Azure access. It checks the readable tag/index digest, exact
+   upstream TLS-patch source guards, actual app/MySQL/TLS cases, configuration
+   migration, policy tests, shell lint and Bicep.
+3. `dependabot-merge.yml` runs trusted **main** code after successful PR CI.
+   It verifies the real Dependabot bot identity, same-repository Docker branch,
+   current head and base, successful expected workflow/job, and exactly one
+   modified Dockerfile. Only the first pinned upstream `FROM` line may change.
+   Downgrades, major versions, forks, extra files and changed patch logic are
+   refused. Native strict required checks remain the final merge gate.
+4. The workflow merges the exact verified head using REST, then explicitly
+   dispatches `deploy.yml` with the resulting main SHA. `GITHUB_TOKEN` merges
+   normally suppress push-triggered Actions; the explicit dispatch avoids
+   relying on that suppressed event. A failed dispatch is a visible workflow
+   failure requiring operator attention, never a claimed deployment.
+5. A release re-runs trusted main CI through the reusable compatibility workflow,
+   publishes the image and passes its exact digest to the deployment job.
+   Main is checked again before changes; a stale request fails before stopping
+   the app. Feature/PR builds cannot deploy or obtain production secrets.
+6. A native recovery gate runs before stop/update/start. The deployment changes
+   only the existing main container image and preserves the startup command,
+   custom certificate, public-main/private-SCM policy, settings and monitor data.
+   One production concurrency group serializes updates with cancellation off.
+
+### Identity, integration and activation
+
+Create the `production` environment with only the `main` branch allowed.
+Unattended operation cannot require a human approval on every deployment; the
+user approves the policy before activation instead. Main requires the trusted
+`mysql-tls` GitHub Actions check with strict up-to-date checks, no force pushes
+and no deletion. No administrator bypass or force merge is used. Major and
+source-guard changes remain manual because the merger refuses them, not because
+it invents a passing review.
+
+Use a free user-assigned managed identity with a federated credential for
+`repo:fletchto99/uptime-kuma-azure:environment:production`, issuer
+`https://token.actions.githubusercontent.com`, audience
+`api://AzureADTokenExchange`. Do not attach the identity to Kuma.
+Assign the custom updater role only on the existing app, its plan and its
+MySQL server. Required actions are app read/start/stop, sitecontainer read/write,
+slot/snapshot read, plan read, database metadata read and native backup read.
+No subscription Contributor, database data-plane rights, credential-list action
+or permission to create a restored server is needed.
+
+Environment Secrets contain these **nonsecret identifiers**, masked by GitHub:
 `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
-`AZURE_RESOURCE_GROUP`, `AZURE_WEBAPP_NAME`. Configure the Azure federated
-credential for `repo:fletchto99/uptime-kuma-azure:environment:production`.
-Grant only app stop/start/read and sitecontainer update permissions, plus plan
-read permission, scoped to these resources; do not grant Owner or access to
-database credentials. Provisioning remains a separate private operation.
+`AZURE_RESOURCE_GROUP`, `AZURE_WEBAPP_NAME`, `AZURE_MYSQL_SERVER_NAME`.
+No GitHub PAT, app private key or Azure client secret is introduced.
 
-Dispatch requires an approved package digest and explicit verified-backup
-confirmation. The update script rejects multiple workers and slots, serializes
-workflow runs, observes `Stopped` before changing the image, starts once, and
-checks the real application's readiness. It never schedules deployments,
-creates slots, scales out, or automatically rolls back across schema changes.
+After hosted CI passes and main integration is approved, dispatch
+`Controlled Kuma update` with `operation=verify` and the expected main SHA.
+This proves actual `GITHUB_TOKEN` environment access, OIDC login, scoped native
+metadata reads and the recovery gate without changing the app. Then the approved
+`operation=noop` performs one same-live-digest stop/start to prove write
+permissions and readiness. Only after both pass, set the repository variable
+`ENABLE_CONTROLLED_UPDATES=true`. The release operation and automatic merger
+remain disabled otherwise. No-op/verify dispatches still require main and the
+configured production environment.
+
+Eligibility and event-suppression handling are unit-tested; don't create fake
+Dependabot PRs or synthetic production incidents to claim live merging is proven.
+The first real eligible update exercises the real merge-to-release path.
+
+### Native recovery gate and failure reporting
+
+The unattended gate replaces the old manual `backups_verified` input. It requires
+a Ready database with at least seven-day retention, a completed native full
+backup no older than 26 hours, and an App Service snapshot:
+
+- No older than six hours and at least 15 minutes old.
+- Within the database's advertised earliest-restore boundary.
+- At or after one of those completed full backups, allowing native log replay.
+
+The same snapshot timestamp is recorded as the intended database PITR time.
+Azure's server metadata does not expose a guaranteed latest restorable timestamp;
+the 15-minute lag is a conservative allowance for log upload, not proof of
+replay completeness. These are **metadata-compatible recovery references, not
+a restore drill or cross-store transaction-consistency proof**. If the metadata
+gate fails, no app update starts. Do not change assets/configuration around an
+update; confirm a recoverable matching pair when making significant changes.
+
+The 30-day `recovery-metadata` Actions artifact contains only UTC timestamps,
+public image digests and source commit. No Azure identifiers, credentials,
+hostnames or private configuration are uploaded. To recover, the operator uses
+the privately held app/database identifiers to find the exact snapshot timestamp
+and restore MySQL to the recorded time. A snapshot older than the seven-day
+database window may no longer form a recoverable pair even if its artifact remains.
+
+Actual deployment failure writes a marker only after stop/update/start begins,
+attempts to leave the app stopped, and opens or updates one bot-owned incident
+issue. The issue contains the run link and recovery instructions, not Azure IDs
+or secrets. Backup/preflight failures don't create fake outage issues. GitHub
+Actions failure notifications and the issue mention are independent of Kuma;
+the owner must enable appropriate GitHub notifications. Email receipt is not
+verified or guaranteed.
+
+The script rejects multiple workers and slots, observes `Stopped`, changes the
+exact image, starts once and checks its own HTTP startup-readiness response.
+It does not poll monitored targets or treat a target DOWN as a deployment failure.
+This one-time response check is **not** continuous database-aware liveness,
+App Service Health Check, or automatic runtime recovery.
 Initial operator-only main ingress blocks hosted readiness probes. After the
 explicit public-access decision, probes use the public main hostname while
 SCM remains operator-only; this workflow is not for initial setup.
@@ -387,10 +478,10 @@ Managed MySQL point-in-time backups cover the database, not uploaded assets.
 App Service automatic snapshots cover the persistent data directory, including
 `db-config.json`, without a new storage account. In the pilot, verify the Backups
 page actually has a restorable snapshot and test restoration while monitors are
-paused. Before each update, freeze configuration/asset changes, wait for an
-automatic snapshot newer than the last asset change, and record a matching
-restorable DB point within the seven-day DB window. Only then confirm backups
-in the update workflow. A blind checkbox is not a backup.
+paused. Keep configuration/asset changes outside update windows, retain native
+snapshots and the private source archive, and use the recovery gate above.
+A passing metadata check is not proof that an arbitrary combination of files
+and database state has been restored successfully.
 
 App Service automatic backups are hourly, retained 30 days and not downloadable.
 If an immediate/downloadable backup is required, obtain approval for a private
@@ -410,6 +501,6 @@ restore does not restore custom domains, TLS bindings, identities or networking;
 reapply/verify those separately from the retained configuration and IaC. Never
 restore into a running slot or leave a second restored monitor app active.
 
-For initial cutover rollback, stop the replacement before asking the parent to
-restore/restart the original service or reverse DNS. This branch must never
-operate on or delete the original VM.
+The original VM has been retired. Do not plan to restart it for rollback.
+Recovery uses retained private archives and native backups, with any new paid
+restore resources separately approved. Never overwrite the original archive.

@@ -68,7 +68,6 @@ jobs:
       UPDATE_OPERATION: ${{ needs.gate.outputs.operation }}
       EXPECTED_SHA: ${{ inputs.expected_sha }}
       RELEASE_IMAGE: ${{ needs.validate.outputs.image }}
-      DEPLOYMENT_FAILURE_FILE: ${{ runner.temp }}/deployment-failure.json
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -77,6 +76,7 @@ jobs:
         run: |
           test -n "$AZURE_CLIENT_ID" && test -n "$AZURE_TENANT_ID" && test -n "$AZURE_SUBSCRIPTION_ID"
           test -n "$AZURE_RESOURCE_GROUP" && test -n "$AZURE_WEBAPP_NAME" && test -n "$AZURE_MYSQL_SERVER_NAME"
+          echo "DEPLOYMENT_FAILURE_FILE=$RUNNER_TEMP/deployment-failure.json" >> "$GITHUB_ENV"
       - uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac # v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}

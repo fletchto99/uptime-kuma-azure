@@ -6,9 +6,9 @@ or custom persistence controller.
 
 **Deployment tooling; live operation requires explicit approval.** The compatibility
 workflow runs disposable synthetic containers, compiles Bicep, and checks update
-guards without Azure credentials. A separate manual OIDC update workflow is
-disabled until deliberately enabled, restricted to `main`, and requires backup
-confirmation and a protected environment.
+guards without Azure credentials. Controlled updates use a main-only OIDC
+workflow and native backup-metadata gates, not stored Azure passwords.
+`ENABLE_CONTROLLED_UPDATES` is the explicit repository activation switch.
 
 `publicAccess` defaults to `false` for initial setup. After explicit approval,
 set it to `true` in the environment's private parameters to publish the main
@@ -26,12 +26,16 @@ trusts the CA but does not check the database hostname. Full-file SHA256 guards
 make upstream source changes fail visibly. The app is not rebuilt or forked.
 Only that public patch enters the build context.
 
-Weekly Docker-only Dependabot updates can propose changes after this
-configuration reaches the default branch. An update that changes either patch
+Docker-only Dependabot checks weekly on Monday at 10:00 UTC (GitHub may delay
+scheduled work). Eligible patch/minor/digest-only updates can be merged by the
+trusted workflow after current-head/current-base CI passes, then explicitly
+dispatched for a tested, serialized deployment. Major versions remain manual.
+An update that changes either patch
 target requires reviewing the source and guards. Remove the patch when upstream
 sets `verifyIdentity: true` for all database connection paths, then rerun the
 actual-app certificate tests. Never disable a negative test to get an update
-through. Auto-merge and scheduled deployments remain off.
+through. The workflow never updates source guards automatically.
+See [the activation, recovery and failure contract](docs/managed-hosting.md#controlled-updates).
 
 ## Compatibility gate
 
@@ -47,7 +51,7 @@ through. Auto-merge and scheduled deployments remain off.
   Kuma's authenticated UI API into its own MySQL schema, with remapped IDs,
   credentials, status-page order and settings checked.
 
-Passing trusted-branch CI publishes a generic credential-free amd64 image to
+Passing main CI publishes a generic credential-free amd64 image to
 GHCR and verifies anonymous pull access. Production uses its immutable digest,
 not the mutable tag. A successful Community MySQL test does not replace the
 approved Azure pilot.
