@@ -158,6 +158,7 @@ test("only immutable package digests qualify; workflow wiring never merges or re
     const deployment = fs.readFileSync(path.join(root, ".github", "workflows", "deploy.yml"), "utf8");
     assert.match(deployment, /workflow_run:\s+workflows: \["Kuma compatibility"\]\s+branches: \[main\]\s+types: \[completed\]/);
     assert.match(deployment, /github\.event\.workflow_run\.event == 'push'/);
+    assert.match(deployment, /github\.ref == 'refs\/heads\/main'/);
     assert.match(deployment, /ref: \$\{\{ github\.sha \}\}/);
     assert.match(deployment, /EXPECTED_SHA: \$\{\{ needs\.gate\.outputs\.expected_sha \}\}/);
     assert.match(deployment, /actions: read/);
