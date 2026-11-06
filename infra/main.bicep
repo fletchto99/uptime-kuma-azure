@@ -141,7 +141,7 @@ resource mainContainer 'Microsoft.Web/sites/sitecontainers@2024-11-01' = {
     targetPort: '3001'
     authType: 'Anonymous'
     inheritAppSettingsAndConnectionStrings: true
-    startUpCommand: 'sh -c "umask 077; exec node server/server.js"'
+    startUpCommand: 'node -e process.umask(0o077);require(process.argv[1]) ./server/server.js'
   }
 }
 

@@ -163,7 +163,9 @@ creation. The intended bounded setup is:
    deployment automation. The template uses the current `sitecontainers`
    model with one main container, `targetPort: '3001'`, anonymous public image
    pull, and inherited app settings. It does not mix in legacy `WEBSITES_PORT`
-   routing. Startup uses `umask 077` for new runtime secret files.
+   routing. Startup sets Node's `process.umask(0o077)` before loading the stock
+   server, without shell quoting that App Service's startup parser can split.
+   New runtime secret files therefore retain the restrictive process umask.
    The plan explicitly depends on successful MySQL database provisioning, so a
    failed database create cannot allocate an otherwise unused paid web worker.
 2. One MySQL 8.4 B1ms server, 20 GiB starting storage, local backups, seven-day
