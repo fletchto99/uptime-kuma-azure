@@ -171,3 +171,18 @@ test("only immutable package digests qualify; workflow wiring never merges or re
         assert.doesNotMatch(workflow, /(?:contents|pull-requests|actions): write/);
     }
 });
+
+test("Dependabot checks Docker and grouped GitHub Actions weekly without changing Docker major policy", () => {
+    const source = fs.readFileSync(path.join(__dirname, "..", ".github", "dependabot.yml"), "utf8")
+        .replaceAll("\r\n", "\n");
+    const updates = source.split(/^  - package-ecosystem: /m).slice(1);
+    assert.deepEqual(updates.map((update) => update.split("\n")[0]), ["docker", "github-actions"]);
+    for (const update of updates) {
+        assert.match(update, /^    directory: \/$/m);
+        assert.match(update, /schedule:\n      interval: weekly\n      day: monday\n      time: "10:00"\n      timezone: "Etc\/UTC"/);
+        assert.match(update, /^    open-pull-requests-limit: 3$/m);
+    }
+    assert.match(updates[0], /ignore:\n      - dependency-name: "\*"\n        update-types: \["version-update:semver-major"\]/);
+    assert.match(updates[1], /groups:\n      github-actions:\n        patterns: \["\*"\]/);
+    assert.doesNotMatch(updates[1], /^\s+(?:ignore|exclude-patterns|update-types):/m);
+});

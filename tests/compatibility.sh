@@ -116,6 +116,41 @@ fi
 docker run --rm --name "$probe" --network "$network" \
     --mount "type=bind,source=$PWD/tests/health-http.cjs,target=/test.cjs,readonly" \
     kuma-compat node /test.cjs
+
+docker exec -e MYSQL_PWD='SyntheticDatabaseOnly42!' "$db" \
+    mysql --protocol=tcp -hmysql --ssl-mode=VERIFY_IDENTITY --ssl-ca=/certs/ca.pem -ukuma kuma -e \
+    'CREATE TABLE health_write_probe (id INT); INSERT INTO health_write_probe VALUES (1);'
+for read_only_mode in read_only super_read_only; do
+    docker exec -e MYSQL_PWD='SyntheticRootOnly42!' "$db" mysql --protocol=socket -uroot -e \
+        "SET GLOBAL $read_only_mode = ON;"
+    [[ "$(docker exec -e MYSQL_PWD='SyntheticDatabaseOnly42!' "$db" \
+        mysql --protocol=tcp -hmysql --ssl-mode=VERIFY_IDENTITY --ssl-ca=/certs/ca.pem -ukuma -Nse 'SELECT 1')" == 1 ]]
+    if docker exec -e MYSQL_PWD='SyntheticDatabaseOnly42!' "$db" \
+        mysql --protocol=tcp -hmysql --ssl-mode=VERIFY_IDENTITY --ssl-ca=/certs/ca.pem -ukuma kuma -e \
+        'INSERT INTO health_write_probe VALUES (2);' > "$work/read-only-write.log" 2>&1; then
+        echo "::error::Synthetic $read_only_mode did not block runtime database writes"
+        exit 1
+    fi
+    grep -q 'ERROR 1290' "$work/read-only-write.log"
+    sleep 3
+    health_result=0
+    docker run --rm --name "$probe" --network "$network" -e EXPECTED_HEALTH_STATUS=503 \
+        --mount "type=bind,source=$PWD/tests/health-http.cjs,target=/test.cjs,readonly" \
+        kuma-compat node /test.cjs || health_result=$?
+    docker exec -e MYSQL_PWD='SyntheticRootOnly42!' "$db" mysql --protocol=socket -uroot -e \
+        'SET GLOBAL super_read_only = OFF; SET GLOBAL read_only = OFF;'
+    if ! wait_for_kuma; then
+        docker logs "$app"
+        echo "::error::Application/database health did not recover after synthetic $read_only_mode"
+        exit 1
+    fi
+    [[ "$health_result" == 0 ]] || exit "$health_result"
+    echo "PASS: actual app health detected $read_only_mode despite successful reads and recovered afterward"
+done
+docker exec -e MYSQL_PWD='SyntheticDatabaseOnly42!' "$db" \
+    mysql --protocol=tcp -hmysql --ssl-mode=VERIFY_IDENTITY --ssl-ca=/certs/ca.pem -ukuma kuma -e \
+    'DROP TABLE health_write_probe;'
+
 docker network disconnect "$network" "$db"
 sleep 3
 health_result=0
