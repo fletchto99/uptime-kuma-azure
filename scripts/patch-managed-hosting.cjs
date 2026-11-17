@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const targets = [
-    ["server/database.js", "a155d869e9540fd34955b56634acc6ca0ef17b2a7f01c6ae8e31d5b21481bba6", 2],
+    ["server/database.js", "32c38b4bbaa9de65925bce78aa2a558bd5c0e63912e74e34fb5a8ffeab2f47c7", 2],
     ["server/setup-database.js", "2e82d7af6870c83e7ba7917f5ca58cb615d76208587cdd1a67cc134f46b84013", 1],
 ];
 
