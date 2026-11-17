@@ -23,7 +23,7 @@ preflight and approval; they are not part of routine image updates.
 ## Image and health
 
 The Dockerfile pins the official readable release tag and multi-platform index.
-It applies a narrow, user-approved TLS hostname-verification patch: stock 2.5.9
+It applies a narrow, user-approved TLS hostname-verification patch: stock 2.5.11
 trusts the CA but does not check the database hostname. Full-file SHA256 guards
 make upstream source changes fail visibly. The app is not rebuilt or forked.
 Only the public patch and small managed-health module enter the build context.

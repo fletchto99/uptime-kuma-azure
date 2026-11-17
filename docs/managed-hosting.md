@@ -29,6 +29,11 @@ the fix. It also checks `server/server.js` before inserting the single managed
 health route. A changed upstream server requires review rather than a blind hash
 refresh.
 
+The [2.5.11 source review](https://github.com/louislam/uptime-kuma/compare/2.5.9...2.5.11)
+found only embedded-MariaDB shutdown cleanup changed in the guarded files.
+All three TLS connection sites and the health-route insertion point remain
+unchanged, so the TLS patch is still required.
+
 `infra/main.bicep` compiles offline. Provisioning is separate from the controlled
 update workflow; there is no registry webhook or scheduled infrastructure deploy.
 Automatic updates require the explicit repository activation switch below.
@@ -60,7 +65,7 @@ Community MySQL in hosted CI is not proof of Azure firewall, capacity, service
 configuration, managed certificates, or production workload behavior.
 
 Kuma's released
-[database connection configuration](https://github.com/louislam/uptime-kuma/blob/2.5.9/server/database.js)
+[database connection configuration](https://github.com/louislam/uptime-kuma/blob/2.5.11/server/database.js)
 sets `rejectUnauthorized: true` but does not set `verifyIdentity: true`.
 Its bundled
 [mysql2 3.11.5 TLS implementation](https://github.com/sidorares/node-mysql2/blob/v3.11.5/lib/base/connection.js)
