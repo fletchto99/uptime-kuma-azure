@@ -1,4 +1,4 @@
-FROM louislam/uptime-kuma:2.5.11@sha256:7554dba313c84e44fee921ef3b5626ba1c711e412e82815e8c957517026112a9
+FROM louislam/uptime-kuma:2.5.12@sha256:8e4b6bef96417ec98a35dc103c99cc64fc229a01e584e56d95d9004d2003c02a
 COPY runtime/health.cjs /app/server/managed-health.js
 COPY scripts/patch-managed-hosting.cjs /tmp/patch-managed-hosting.cjs
 RUN node /tmp/patch-managed-hosting.cjs && rm /tmp/patch-managed-hosting.cjs
